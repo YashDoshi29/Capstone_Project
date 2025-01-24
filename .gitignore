@@ -1,0 +1,43 @@
+# Node.js dependencies
+/node_modules
+/.pnp
+.pnp.js
+
+# Testing coverage
+/coverage
+
+# Production build files
+/build
+
+# Miscellaneous system files
+.DS_Store
+
+# Environment variables
+.env
+.env.local
+.env.development
+.env.development.local
+.env.test
+.env.test.local
+.env.production
+.env.production.local
+
+# Log files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# IDE/Editor configurations
+.idea/
+.idea/workspace.xml
+*.iml
+*.xml
+
+# React-specific files
+src/app/src/*.test.js  # Skip tests unless you want to include them in version control
+src/app/public/favicon.ico  # If favicon.ico is customizable, ignore it if unnecessary
+src/app/public/manifest.json  # Ignore manifest if not required in your deployment
+src/app/public/robots.txt  # Ignore robots.txt if auto-generated
+
+# Others
+*.log
