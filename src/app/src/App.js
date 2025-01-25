@@ -1,19 +1,22 @@
 import React from "react";
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
-import Header from "./components/Header";
-import DashboardPage from "./pages/DashboardPage";
+import HomePage from "./pages/HomePage"; // Import the HomePage component
+import DashboardPage from "./pages/DashboardPage"; // Import the Dashboard page
+// Removed Header import because the homepage has its own dynamic design
 
 const App = () => {
   return (
     <Router>
-      <Header />
       <Routes>
-        <Route path="/" element={<DashboardPage />} />
-        {/* Add routes for other pages here */}
+        {/* Render HomePage as the default route */}
+        <Route path="/" element={<HomePage />} />
+        {/* Render DashboardPage on the /dashboard route */}
+        <Route path="/dashboard" element={<DashboardPage />} />
       </Routes>
     </Router>
   );
 };
 
 export default App;
+
 
