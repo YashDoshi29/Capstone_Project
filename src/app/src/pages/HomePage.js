@@ -2,12 +2,13 @@ import React from "react";
 import { Box, Typography, AppBar, Toolbar, Button } from "@mui/material";
 import { useSpring, animated } from "@react-spring/web"; // For dynamic animations
 import { Fade } from "react-awesome-reveal"; // For scroll-triggered animations
-import DynamicGraphs from "../components/DynamicGraphs"; // Line graph
-import BarChart from "../components/BarChart"; // Bar chart
-import DoughnutChart from "../components/DoughnutChart"; // Doughnut chart
+import DynamicGraphs from "../components/DynamicGraphs";
+import BarChart from "../components/BarChart";
+import DoughnutChart from "../components/DoughnutChart";
+import { Link } from "react-router-dom";
 
 const HomePage = () => {
-  // Fade-in animation for welcome text
+  // Fade-in animation for the "Welcome" text
   const textAnimation = useSpring({
     from: { opacity: 0 },
     to: { opacity: 1 },
@@ -17,17 +18,12 @@ const HomePage = () => {
   return (
     <Box
       sx={{
-        minHeight: "100vh",
+        width: "100%",
         background: "radial-gradient(circle, #0f0f0f, #1c1c1c, #2f2f2f)",
         color: "white",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        overflowX: "hidden",
-        position: "relative",
       }}
     >
-      {/* Header */}
+      {/* Header (AppBar at the top) */}
       <AppBar
         position="absolute"
         sx={{
@@ -51,6 +47,8 @@ const HomePage = () => {
           </Typography>
           <Box>
             <Button
+              component={Link}
+              to="/signin"
               variant="outlined"
               sx={{
                 color: "white",
@@ -64,6 +62,8 @@ const HomePage = () => {
               Sign In
             </Button>
             <Button
+              component={Link}
+              to='/signup'
               variant="contained"
               sx={{
                 backgroundColor: "#36A2EB",
@@ -78,70 +78,95 @@ const HomePage = () => {
         </Toolbar>
       </AppBar>
 
-      {/* Welcome Text */}
-      <animated.div style={textAnimation}>
-        <Typography
-          variant="h2"
-          sx={{
-            fontWeight: "bold",
-            textAlign: "center",
-            marginTop: "6rem",
-            textShadow: "0px 0px 5px rgba(255, 255, 255, 0.3)",
-            "&:hover": {
-              textShadow: "0px 0px 20px rgba(255, 255, 255, 0.6)",
-            },
-          }}
-        >
-          Welcome to Financial Freedom
-        </Typography>
-      </animated.div>
-
-      {/* Dynamic Line Graph and Budget Fact */}
+      {/*
+        Hero Section (full screen).
+        - Welcome text at top
+        - "Did You Know?" + Graph in the middle
+      */}
       <Box
         sx={{
+          minHeight: "100vh",            // Full viewport height
           display: "flex",
-          justifyContent: "space-around",
-          alignItems: "center",
-          width: "100%",
-          marginTop: "4rem",
+          flexDirection: "column",
+          pt: 10,                        // Padding top (so heading isn't behind AppBar)
         }}
       >
-        {/* Budget Fact */}
-        <Fade triggerOnce direction="left">
+        {/* Heading at the top */}
+        <Box sx={{ textAlign: "center", mb: 6 }}>
+          <animated.div style={textAnimation}>
+            <Typography
+              variant="h2"
+              sx={{
+                fontWeight: "bold",
+                textShadow: "0px 0px 5px rgba(255, 255, 255, 0.3)",
+                "&:hover": {
+                  textShadow: "0px 0px 20px rgba(255, 255, 255, 0.6)",
+                },
+              }}
+            >
+              Welcome to Financial Freedom
+            </Typography>
+          </animated.div>
+        </Box>
+
+        {/* Centered container for "Did You Know?" + Graph */}
+        <Box
+          sx={{
+            flex: 1,                     // Takes remaining vertical space
+            display: "flex",
+            alignItems: "center",        // Center vertically
+            justifyContent: "center",    // Center horizontally
+          }}
+        >
           <Box
             sx={{
-              flex: 1,
-              padding: "2rem",
-              textAlign: "left",
-              color: "#b0b0b0",
-              maxWidth: "400px",
+              display: "flex",
+              justifyContent: "space-around",
+              alignItems: "flex-start",
+              width: "100%",
+              maxWidth: "1200px",
+              px: "2rem",
+              gap: "2rem",               // Horizontal gap between boxes
             }}
           >
-            <Typography variant="h5" sx={{ marginBottom: "1rem", fontWeight: "bold" }}>
-              Did You Know?
-            </Typography>
-            <Typography variant="body1">
-              The average household spends 30% of its income on housing, while
-              only 10% is allocated to savings. Optimize your budget with our
-              tools!
-            </Typography>
-          </Box>
-        </Fade>
+            {/* Budget Fact (Did You Know?) */}
+            <Fade triggerOnce direction="left">
+              <Box
+                sx={{
+                  flex: 1,
+                  padding: "2rem",
+                  textAlign: "left",
+                  color: "#b0b0b0",
+                  maxWidth: "400px",
+                }}
+              >
+                <Typography variant="h5" sx={{ marginBottom: "1rem", fontWeight: "bold" }}>
+                  Did You Know?
+                </Typography>
+                <Typography variant="body1">
+                  The average household spends 30% of its income on housing, while
+                  only 10% is allocated to savings. Optimize your budget with our
+                  tools!
+                </Typography>
+              </Box>
+            </Fade>
 
-        {/* Dynamic Line Graph */}
-        <Fade triggerOnce direction="right">
-          <Box sx={{ flex: 2, width: "70%", maxWidth: "800px" }}>
-            <DynamicGraphs />
+            {/* Dynamic Graph */}
+            {/*<Fade triggerOnce direction="right">*/}
+              <Box sx={{ flex: 2, maxWidth: "900px", width: "100%" }}>
+                <DynamicGraphs />
+              </Box>
+            {/*</Fade>*/}
           </Box>
-        </Fade>
+        </Box>
       </Box>
 
-      {/* Section: Budget Optimization (Hidden Initially) */}
+      {/* Next Section: Budget Optimization */}
       <Box
         sx={{
           width: "90%",
           maxWidth: "800px",
-          marginTop: "10rem", // Ensure it's below the viewport
+          margin: "4rem auto 0 auto",
           textAlign: "center",
         }}
       >
@@ -165,12 +190,12 @@ const HomePage = () => {
         </Fade>
       </Box>
 
-      {/* Section: Investment Ideas (Hidden Initially) */}
+      {/* Next Section: Investment Ideas */}
       <Box
         sx={{
           width: "90%",
           maxWidth: "800px",
-          marginTop: "4rem",
+          margin: "4rem auto",
           textAlign: "center",
         }}
       >
