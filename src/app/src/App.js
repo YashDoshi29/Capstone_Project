@@ -1,8 +1,9 @@
 import React from "react";
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
-import HomePage from "./pages/HomePage"; // Import the HomePage component
-import DashboardPage from "./pages/DashboardPage"; // Import the Dashboard page
-// Removed Header import because the homepage has its own dynamic design
+import HomePage from "./pages/HomePage";
+import DashboardPage from "./pages/DashboardPage";
+import SignInPage from "./pages/Signin";
+import SignUpPage from "./pages/Signup";
 
 const App = () => {
   return (
@@ -12,6 +13,8 @@ const App = () => {
         <Route path="/" element={<HomePage />} />
         {/* Render DashboardPage on the /dashboard route */}
         <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/singin" element={<SignInPage />} />
+        <Route path="/signup" element={<SignUpPage />} />
       </Routes>
     </Router>
   );
