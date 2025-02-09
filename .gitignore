@@ -103,4 +103,5 @@ functions/dist/
 Dockerfile
 .dockerignore
 *.tar.gz
+*.csv
 
