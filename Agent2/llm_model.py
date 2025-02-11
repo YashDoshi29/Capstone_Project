@@ -1,7 +1,7 @@
 import requests
 from transformers import pipeline
 
-API_KEY = '6HK1JJE4HW28614N'  # Replace with your own Vantage API key
+ # Replace with your own Vantage API key
 
 # Fetching the real-time stock data for any stock symbol from the Alpha Vantage API
 def fetch_real_time_stock_data(symbol):
