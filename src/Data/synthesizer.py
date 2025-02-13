@@ -30,6 +30,7 @@ def generate_synthetic_customers(num_customers: int, acs_df: pd.DataFrame) -> pd
         "Has_Children": np.random.choice([True, False], size=num_customers, p=[0.4, 0.6]),
         "Employment_Zone": np.random.choice(["Downtown", "Suburban", "Federal", "Tourist"],  # DC-specific zones
                                             size=num_customers, p=[0.4, 0.3, 0.2, 0.1]),
+
     }
 
     # Add DC-specific housing costs (based on Ward data)
@@ -145,6 +146,8 @@ class SyntheticDataGenerator:
 
         return distribution if distribution else default_dist
 
+
+
     def generate_transactions(self, customer_df: pd.DataFrame, num_weeks: int = 4) -> pd.DataFrame:
         """Main transaction generator with DeepSeek integration"""
         customer = customer_df.iloc[0].to_dict()
@@ -194,7 +197,7 @@ class SyntheticDataGenerator:
                             "Category": category,
                             "Merchant": merchant["Business Name"],
                             "Description": description,
-                            "Payment_Type": np.random.choice(["Credit", "Debit"], p=[0.4, 0.6]),
+                            "Payment_Type": np.random.choice(["Credit", "Debit"], p=[0.7, 0.3]),
                             # Call _is_online with both category and merchant parameters
                             "Online": self._is_online(category, merchant)
                         })
