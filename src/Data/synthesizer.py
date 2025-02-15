@@ -28,10 +28,11 @@ def generate_synthetic_customers(num_customers: int, acs_df: pd.DataFrame) -> pd
         "Marital_Status": np.random.choice(["Married", "Never Married", "Separated", "Divorced", "Widowed"],
                                            size=num_customers, p=[0.5, 0.3, 0.05, 0.1, 0.05]),
         "Has_Children": np.random.choice([True, False], size=num_customers, p=[0.4, 0.6]),
-        "Employment_Zone": np.random.choice(["Downtown", "Suburban", "Federal", "Tourist"],  # DC-specific zones
-                                            size=num_customers, p=[0.4, 0.3, 0.2, 0.1]),
+        "Employment_Zone": np.random.choice(["Downtown", "Suburban", "Federal", "Tourist", "Industrial", "University"],  # DC-specific zones
+                                            size=num_customers, p=[0.35, 0.25, 0.10, 0.05, 0.15, 0.1]),
     }
 
+    
     # Add DC-specific housing costs (based on Ward data)
     df = pd.DataFrame(data)
     df["Monthly_Housing_Cost"] = (df["Income"] * np.random.normal(0.35, 0.07, num_customers) / 12).round(2)
@@ -128,7 +129,6 @@ class SyntheticDataGenerator:
         - Income: ${customer['Income']:,.2f}
         - Location: {customer['Location']}
         - Employment Zone: {customer['Employment_Zone']}
-        - Commute: {customer['Commute_Method']}
         - Priorities: {customer.get('spending_priorities', [])}
 
         Return JSON with category percentages for: Food, Housing, Transportation, Healthcare, 
@@ -194,7 +194,7 @@ class SyntheticDataGenerator:
                             "Category": category,
                             "Merchant": merchant["Business Name"],
                             "Description": description,
-                            "Payment_Type": np.random.choice(["Credit", "Debit"], p=[0.4, 0.6]),
+                            "Payment_Type": np.random.choice(["Credit", "Debit"], p=[0.7, 0.3]),
                             # Call _is_online with both category and merchant parameters
                             "Online": self._is_online(category, merchant)
                         })
@@ -204,29 +204,59 @@ class SyntheticDataGenerator:
     # Helper methods from previous implementation
     def _generate_dc_timestamp(self, week_offset: int, base_date: datetime, category: str, employment_zone: str) -> str:
         """Generate realistic DC timestamps based on category and employment zone."""
-        day_offset = np.random.randint(0, 7)
-        transaction_date = base_date - timedelta(days=day_offset)
+        # day_offset = np.random.randint(0, 7)
+        # transaction_date = base_date - timedelta(days=day_offset)
+        
+        transaction_date = base_date - timedelta(weeks=week_offset)
 
-        # Time patterns for different categories
-        if category == "Food & Beverage":
-            hour = np.random.normal(loc=19.0, scale=1.5)  # Evening meals
-        elif category == "Retail":
-            hour = np.random.choice([11, 12, 13, 17, 18], p=[0.1, 0.3, 0.3, 0.2, 0.1])  # Lunchtime/weekend shopping
-        elif category == "Government Services":
-            hour = np.random.uniform(9.0, 16.0)  # Business hours
+        employment_zone_hours = {
+        "Downtown": [7, 8, 9, 16, 17, 18],  # Federal work hours
+        "Suburban": [8, 9, 12, 17, 18, 19],  # Office work hours
+        "Industrial": [6, 7, 15, 16, 17, 18],  # Factory shifts
+        "University": [10, 12, 14, 18, 20, 21],  # Student hours
+        "Federal": [6, 7, 8, 16, 17, 18],  # Federal early morning and evening
+        "Tourist": [9, 11, 13, 15, 17, 19]  # Tourist-heavy business hours
+    }
+        
+        category_hours = {
+        "Food": [11, 12, 13, 18, 19, 20],  # Meal times
+        "Housing": [9, 10, 14, 15],  # Business hours for housing-related transactions
+        "Transportation": [7, 8, 17, 18],  # Commute times
+        "Healthcare": [9, 10, 14, 15],  # Business hours for healthcare
+        "Entertainment": [18, 19, 20, 21, 22],  # Evening entertainment
+        "Retail": [10, 11, 12, 17, 18, 19],  # Shopping hours
+        "Government": [9, 10, 14, 15],  # Government office hours
+        "Education": [10, 11, 12, 14, 15, 16],  # School hours
+        "Travel": [9, 10, 14, 15],  # Business hours for travel
+        "Miscellaneous": [10, 11, 12, 14, 15, 16]  # General business hours
+    }
+       
+        if employment_zone in employment_zone_hours:
+            zone_hours = employment_zone_hours[employment_zone]
         else:
-            hour = np.random.uniform(10.0, 20.0)
-
-        # Adjust for employment zone commuting patterns
-        if employment_zone == "Downtown" and category in ["Retail", "Food & Beverage"]:
-            hour += np.random.uniform(-1.0, 2.0)  # After-work shopping/dining
-
-        # Convert to valid timestamp
-        hour = min(max(int(hour), 0), 23)
+            zone_hours = [9, 10, 11, 12, 14, 15, 16, 17]  # Default business hours
+        
+        if category in category_hours:
+            category_hours_list = category_hours[category]
+        else:
+            category_hours_list = [10, 11, 12, 14, 15, 16]  # Default business hours
+        
+        # Intersection of zone and category hours
+        possible_hours = list(set(zone_hours).intersection(set(category_hours_list)))
+        
+        if not possible_hours:
+            possible_hours = [10, 11, 12, 14, 15, 16]  # Default to general business hours
+        
+        # Randomly select an hour from the possible hours
+        hour = np.random.choice(possible_hours)
+        
+        # Randomly select a minute
         minute = np.random.randint(0, 60)
-        return (transaction_date.replace(hour=hour, minute=minute, second=0)
-                .strftime("%Y-%m-%d %H:%M:%S"))
-
+        
+        # Generate the timestamp
+        timestamp = transaction_date.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        
+        return timestamp.strftime("%Y-%m-%d %H:%M:%S")
     def _is_online(self, category: str, merchant: dict) -> bool:
         """Determine if transaction is online based on merchant type."""
         if "Online" in merchant.get("Business Type", ""):
@@ -237,7 +267,7 @@ class SyntheticDataGenerator:
 # Usage Example
 if __name__ == "__main__":
     # Initialize generator
-    acs_data = pd.read_csv("cache/acs_data_DC.csv")
+    acs_data = pd.read_csv("./acs_data_DC.csv")
     merchants_data = pd.read_csv("cache/dc_businesses_cleaned.csv")
     generator = SyntheticDataGenerator(acs_data, merchants_data)
 
