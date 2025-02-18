@@ -234,18 +234,18 @@ class SyntheticDataGenerator:
         if employment_zone in employment_zone_hours:
             zone_hours = employment_zone_hours[employment_zone]
         else:
-            zone_hours = [9, 10, 11, 12, 14, 15, 16, 17]  # Default business hours
+            zone_hours = [9, 10, 11, 12, 14, 15, 16, 17] 
         
         if category in category_hours:
             category_hours_list = category_hours[category]
         else:
-            category_hours_list = [10, 11, 12, 14, 15, 16]  # Default business hours
+            category_hours_list = [10, 11, 12, 14, 15, 16]  
         
         # Intersection of zone and category hours
         possible_hours = list(set(zone_hours).intersection(set(category_hours_list)))
         
         if not possible_hours:
-            possible_hours = [10, 11, 12, 14, 15, 16]  # Default to general business hours
+            possible_hours = [10, 11, 12, 14, 15, 16] 
         
         # Randomly select an hour from the possible hours
         hour = np.random.choice(possible_hours)
