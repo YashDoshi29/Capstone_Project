@@ -1,213 +1,145 @@
-import os
-import requests
-import pandas as pd
 import numpy as np
-from tenacity import retry, stop_after_attempt, wait_exponential
-from concurrent.futures import ThreadPoolExecutor
-from typing import Tuple, Dict, List
-
-# -----------------------------
-# Configuration & Environment
-# -----------------------------
-CENSUS_API_KEY = 'b9b3ecac3f95ad013778c6ca8f6854480be8f7c0'
-DEEPSEEK_API_KEY = 'sk-20f42785068042f1b9d02719d2e22fc6'
-API_ENDPOINTS = {
-    "census": "https://api.census.gov/data/2023/acs/acs5",
-    "deepseek": "https://api.deepseek.com/v1/chat/completions"
-}
+import pandas as pd
+from scipy import stats
+from sklearn.preprocessing import MinMaxScaler
 
 
-# -----------------------------
-# 1. Enhanced Census Data Fetching
-# -----------------------------
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
-def fetch_acs_data() -> pd.DataFrame:
-    """Fetch ACS data with error handling and retry logic."""
-    params = {
-        "get": "NAME,B01001_001E,B19013_001E",
-        "for": "state:11",
-        "key": CENSUS_API_KEY
-    }
+class RealisticCustomerGenerator:
+    def __init__(self, income_demographics_df, employment_sectors_df):
+        self.income_data = income_demographics_df
+        self.employment_data = employment_sectors_df
+        self._preprocess_data()
 
-    try:
-        response = requests.get(API_ENDPOINTS["census"], params=params)
-        response.raise_for_status()
-        data = response.json()
-        return pd.DataFrame(data[1:], columns=data[0]).apply(pd.to_numeric, errors='ignore')
-    except requests.exceptions.RequestException as e:
-        print(f"Error fetching ACS data: {str(e)}")
-        raise
+    def _preprocess_data(self):
+        """Clean and preprocess input datasets"""
+        # Convert income columns to numeric
+        income_cols = ['Median_Household_Income', 'Mean_Income', 'Per_Capita_Income']
+        self.income_data[income_cols] = self.income_data[income_cols].replace('[\$,]', '', regex=True).astype(float)
 
+        # Normalize employment sector percentages
+        sector_cols = self.employment_data.columns[2:]
+        self.employment_data[sector_cols] = self.employment_data[sector_cols].div(
+            self.employment_data[sector_cols].sum(axis=1), axis=0)
 
-# -----------------------------
-# 2. Optimized Customer Generation
-# -----------------------------
-def generate_synthetic_customers(num_customers: int, acs_df: pd.DataFrame) -> pd.DataFrame:
-    """Generate customers using vectorized operations for better performance."""
-    acs_df = acs_df.copy()
-    acs_df['B19013_001E'] = pd.to_numeric(acs_df['B19013_001E'], errors='coerce')
-    avg_income = acs_df['B19013_001E'].mean()
-
-    # Vectorized generation
-    data = {
-        "Customer_ID": [f"CUST{i:06}" for i in range(1, num_customers + 1)],
-        "Age": np.random.randint(18, 81, num_customers),
-        "Income": np.maximum(
-            np.random.lognormal(mean=np.log(avg_income), sigma=0.3, size=num_customers),
-            10000
-        ).round(2),
-        "Gender": np.random.choice(
-            ["Male", "Female", "Other"],
-            size=num_customers,
-            p=[0.48, 0.48, 0.04]
-        ),
-        "Location": np.random.choice(
-            acs_df['NAME'],
-            size=num_customers,
-            p=acs_df['B01001_001E'] / acs_df['B01001_001E'].sum()
+        # Merge datasets on zipcode
+        self.combined_data = pd.merge(
+            self.income_data,
+            self.employment_data,
+            on='Zipcode',
+            how='left'
         )
-    }
 
-    return pd.DataFrame(data)
+    def _calculate_income(self, row):
+        """Calculate individual income based on household parameters"""
+        base_income = row['Median_Household_Income']
 
+        # Adjust for household characteristics
+        income_factor = 1.0
+        if row['Marital_Status'] in ['Married', 'Widowed']:
+            income_factor *= 1.3
+        if row['Number_of_Earners'] > 1:
+            income_factor *= 1.2 ** (row['Number_of_Earners'] - 1)
+        if row['Has_Children']:
+            income_factor *= 0.95  # Conservative adjustment for child expenses
 
-# -----------------------------
-# 3. Efficient Transaction Generation
-# -----------------------------
-def generate_synthetic_transactions(customers_df: pd.DataFrame, num_transactions: int) -> pd.DataFrame:
-    """Generate transactions using vectorized operations and proper sampling."""
-    # Precompute customer weights based on income
-    customer_weights = customers_df["Income"].values
-    customer_weights = customer_weights / customer_weights.sum()
+        # Add random variation with truncated normal distribution
+        individual_income = base_income * income_factor * np.random.normal(1, 0.15)
+        return max(individual_income, 15000)  # Ensure minimum income
 
-    # Sample customers with income-based weighting
-    sampled_customers = customers_df.sample(
-        n=num_transactions,
-        replace=True,
-        weights=customer_weights,
-        random_state=42
-    ).reset_index(drop=True)
+    def _assign_employment_sector(self, zipcode):
+        """Assign employment sector based on zipcode distribution"""
+        sectors = self.employment_data.columns[2:]
+        probabilities = self.employment_data.loc[
+            self.employment_data['Zipcode'] == zipcode,
+            sectors
+        ].values[0]
 
-    # Generate transaction data
-    transactions = {
-        "Transaction_ID": [f"TXN{i:06}" for i in range(1, num_transactions + 1)],
-        "Customer_ID": sampled_customers["Customer_ID"],
-        "Date": pd.to_datetime("now") - pd.to_timedelta(
-            np.random.randint(0, 365, num_transactions),
-            unit='d'
-        ),
-        "Amount": np.round(
-            np.random.lognormal(
-                mean=3,  # Results in typical amounts around $20-30
-                sigma=0.5,
-                size=num_transactions
-            ),
-            2
-        ),
-        "Transaction_Type": np.random.choice(
-            ["Debit", "Credit"],
-            size=num_transactions,
-            p=[0.9, 0.1]
-        ),
-        "Merchant": np.random.choice(
-            ["Starbucks", "Walmart", "Amazon", "Uber", "McDonald's"],
-            size=num_transactions,
-            p=[0.3, 0.25, 0.2, 0.15, 0.1]
-        ),
-        "Category": np.random.choice(
-            ["Food & Beverage", "Groceries", "Shopping", "Transportation", "Entertainment"],
-            size=num_transactions
-        )
-    }
+        return np.random.choice(sectors, p=probabilities)
 
-    df = pd.DataFrame(transactions)
-    df["Date"] = df["Date"].dt.strftime("%Y-%m-%d")
-    df["Description"] = df["Merchant"] + " purchase"  # Temporary placeholder
-    return df
+    def generate_household(self, num_customers):
+        """Generate realistic households with zipcode-based demographics"""
+        # Weight zipcodes by population
+        zipcode_choices = self.combined_data['Zipcode'].values
+        population_weights = self.combined_data['Population'].values
+        population_weights = MinMaxScaler().fit_transform(population_weights.reshape(-1, 1)).flatten()
 
+        households = []
+        for _ in range(num_customers):
+            # Select zipcode with probability weighted by population
+            zipcode = np.random.choice(zipcode_choices, p=population_weights)
+            zip_data = self.combined_data[self.combined_data['Zipcode'] == zipcode].iloc[0]
 
-# -----------------------------
-# 4. DeepSeek API Integration with Parallel Processing
-# -----------------------------
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
-def generate_description_parallel(args: Tuple[str, str]) -> str:
-    """Generate description using DeepSeek API with parallel processing."""
-    merchant, category = args
-    headers = {
-        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
-        "Content-Type": "application/json"
-    }
+            # Generate household structure
+            family_size = np.random.choice(
+                [1, 2, 3, 4, 5],
+                p=zip_data[['Single_Member', 'Family_Size_2', 'Family_Size_3', 'Family_Size_4', 'Family_Size_5+']]
+            )
 
-    payload = {
-        "model": "deepseek-chat",
-        "messages": [{
-            "role": "user",
-            "content": f"Generate a realistic bank statement description for a {category} purchase at {merchant}. Keep it under 10 words."
-        }],
-        "temperature": 0.7,
-        "max_tokens": 25
-    }
+            has_children = np.random.rand() < zip_data['Households_with_Children']
+            num_earners = min(
+                np.random.poisson(zip_data['Average_Earners']),
+                family_size
+            )
 
-    try:
-        response = requests.post(API_ENDPOINTS["deepseek"], json=payload, headers=headers)
-        response.raise_for_status()
-        return response.json()["choices"][0]["message"]["content"].strip()
-    except Exception as e:
-        print(f"Error generating description: {str(e)}")
-        return f"{merchant} purchase"
+            # Marital status based on zipcode demographics
+            marital_status = np.random.choice(
+                ['Married', 'Never Married', 'Divorced', 'Widowed'],
+                p=[
+                    zip_data['Married_Households'],
+                    zip_data['Never_Married'],
+                    zip_data['Divorced'],
+                    zip_data['Widowed']
+                ]
+            )
 
+            # Age distribution based on zipcode
+            age = int(stats.norm.rvs(
+                loc=zip_data['Median_Age'],
+                scale=10,
+                size=1
+            ).clip(18, 85))
 
-def update_transaction_descriptions(transactions_df: pd.DataFrame) -> pd.DataFrame:
-    """Batch update descriptions using parallel processing."""
-    # Convert to hashable tuples instead of records
-    unique_combinations = transactions_df[["Merchant", "Category"]].drop_duplicates()
-    args_list = [tuple(row) for row in unique_combinations.values]
+            # Generate gender with zipcode-specific ratio
+            gender = np.random.choice(
+                ['Male', 'Female'],
+                p=[zip_data['Male_Population'], 1 - zip_data['Male_Population']]
+            )
 
-    # Generate descriptions in parallel
-    with ThreadPoolExecutor(max_workers=5) as executor:
-        results = list(executor.map(generate_description_parallel, args_list))
+            # Employment sector assignment
+            employment_sector = self._assign_employment_sector(zipcode)
 
-    # Create mapping and update descriptions
-    description_map = {args: result for args, result in zip(args_list, results)}
-    transactions_df["Description"] = transactions_df.apply(
-        lambda row: description_map.get(
-            (row["Merchant"], row["Category"]),
-            f"{row['Merchant']} purchase"
-        ),
-        axis=1
-    )
-    return transactions_df
+            household = {
+                'Zipcode': zipcode,
+                'Age': age,
+                'Gender': gender,
+                'Marital_Status': marital_status,
+                'Family_Size': family_size,
+                'Has_Children': has_children,
+                'Number_of_Earners': num_earners,
+                'Employment_Sector': employment_sector,
+                'Median_Household_Income': zip_data['Median_Household_Income'],
+                'Household_Type': 'Family' if family_size > 1 else 'Non-Family'
+            }
+
+            # Calculate individual income
+            household['Estimated_Income'] = self._calculate_income(household)
+
+            households.append(household)
+
+        return pd.DataFrame(households)
 
 
-# -----------------------------
-# 5. Main Execution with Validation
-# -----------------------------
+# Example Usage
 if __name__ == "__main__":
-    # Set random seed for reproducibility
-    np.random.seed(42)
+    # Load datasets
+    income_demographics = pd.read_csv("zipcode_income_demographics.csv")
+    employment_sectors = pd.read_csv("zipcode_employment_sectors.csv")
 
-    # Fetch and validate ACS data
-    try:
-        acs_df = fetch_acs_data()
-        print("ACS Data Sample:")
-        print(acs_df.head())
-    except Exception as e:
-        print(f"Fatal error fetching data: {str(e)}")
-        exit(1)
+    # Initialize generator
+    generator = RealisticCustomerGenerator(income_demographics, employment_sectors)
 
-    # Generate synthetic data
-    customers_df = generate_synthetic_customers(1000, acs_df)
-    transactions_df = generate_synthetic_transactions(customers_df, 5000)
-
-    # Update descriptions
-    try:
-        transactions_df = update_transaction_descriptions(transactions_df)
-        print("\nTransaction Sample with Enhanced Descriptions:")
-        print(transactions_df.sample(5))
-    except Exception as e:
-        print(f"Error updating descriptions: {str(e)}")
-        transactions_df["Description"] = transactions_df["Merchant"] + " purchase"
+    # Generate 1000 realistic customer profiles
+    customers = generator.generate_household(1000)
 
     # Save results
-    customers_df.to_csv("synthetic_customers.csv", index=False)
-    transactions_df.to_csv("synthetic_transactions.csv", index=False)
+    customers.to_csv("realistic_customer_profiles.csv", index=False)
