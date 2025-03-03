@@ -161,6 +161,19 @@ const Dashboard = () => {
         </Fade>
       </Box>
 
+      <Box sx={{ textAlign: "center", mt: 4 }}>
+          <Button
+            component={Link}
+            to="/financial-qa"
+            variant="contained"
+            color="primary"
+            sx={{ padding: "10px 20px" }}
+          >
+            Go to Financial QA Chatbot
+          </Button>
+        </Box>
+      
+
       {/* Footer */}
       <Box
         component="footer"
