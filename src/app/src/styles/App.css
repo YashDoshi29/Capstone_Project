@@ -75,7 +75,7 @@ section.visible {
   transform: translateY(0);
 }
 
-/* Budget and Investment sections */
+/* Budget and Investment.js sections */
 #budget-optimization, #investment-ideas {
   margin: 4rem auto;
   text-align: center;
