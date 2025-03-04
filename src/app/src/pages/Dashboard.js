@@ -218,15 +218,29 @@ const Dashboard = () => {
       </Box>
     
     
-    {/* Footer */}
+    {/* Go to link */}
     <Box sx={{ textAlign: "center", mt: 4 }}>
     <Button component={Link} to="/investment" variant="contained" color="primary" sx={{ padding: "10px 20px" }}>
       Go to Financial Assistant
     </Button>
     </Box>
+  
+    {/* Footer */}
+    <Box
+    component="footer"
+    sx={{
+      width: "100%",
+      padding: "1rem",
+      backgroundColor: "#1c1c1c",
+      color: "white",
+      textAlign: "center",
+    }}
+  >
+    <Typography variant="body2">
+      © {new Date().getFullYear()} Financial Assistant. All rights reserved.
+    </Typography>
   </Box>
-
-    
+  </Box>
   );
 };
 
