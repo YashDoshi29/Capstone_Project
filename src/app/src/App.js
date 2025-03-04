@@ -5,7 +5,7 @@ import SignInPage from "./pages/Signin";
 import SignUpPage from "./pages/Signup";
 import "./styles/App.css";
 import Dashboard from "./pages/Dashboard";
-import FinancialQA from "../pages/financialqa.js";
+import InvestmentPage from "./pages/Investment.js";
 
 const App = () => {
   return (
@@ -18,7 +18,7 @@ const App = () => {
         <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/signin" element={<SignInPage />} />
         <Route path="/signup" element={<SignUpPage />} />
-        <Route path="/financialqa" element={<FinancialQA />} />
+        <Route path="/Investment" element={<InvestmentPage />} />
       </Routes>
     </Router>
   );

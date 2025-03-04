@@ -14,7 +14,7 @@ const DoughnutChart = () => {
         labels: ["Stocks", "Real Estate", "Crypto", "Savings", "Mutual Funds"],
         datasets: [
           {
-            label: "Investment Distribution",
+            label: "Investment.js Distribution",
             data: [40, 25, 15, 10, 10],
             backgroundColor: ["#FF6384", "#36A2EB", "#FFCE56", "#4BC0C0", "#9966FF"],
           },
