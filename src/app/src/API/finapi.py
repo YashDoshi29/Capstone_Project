@@ -13,7 +13,7 @@ ALPHA_VANTAGE_API_KEY = 'O30LC68NVP5U8YSQ'  # Alpha Vantage API Key
 class DataCollectionComponent:
     def fetch_stock_data(self, symbol):
         """
-        Fetches daily stock data for a given ticker symbol from Alpha Vantage API.
+        Fetches stock data for a given ticker symbol from Alpha Vantage API.
         """
         url = 'https://www.alphavantage.co/query'
         params = {
@@ -22,11 +22,11 @@ class DataCollectionComponent:
             'apikey': ALPHA_VANTAGE_API_KEY
         }
         response = requests.get(url, params=params)
-        
+
         # Debugging: print the entire response to see the returned data
         print(f"API Response for {symbol}: {response.status_code}")
         print(response.json())  # Print the full response
-        
+
         if response.status_code == 200:
             return response.json()
         else:
@@ -39,18 +39,20 @@ class DataCollectionComponent:
         """
         if not stock_data:
             return []
-        time_series = stock_data.get('Time Series (Daily)', {})  # Use the correct key from API response
-        if not time_series:
-            print("No time series data found.")
+        quote_data = stock_data.get('Global Quote', {})  # Corrected key from the response
+        if not quote_data:
+            print("No stock data found.")
             return []
-        documents = []
-        for date, data in time_series.items():
-            document = (
-                f"Stock Data - Date: {date}, Open: {data['1. open']}, High: {data['2. high']}, "
-                f"Low: {data['3. low']}, Close: {data['4. close']}, Volume: {data['5. volume']}"
-            )
-            documents.append(document)
-        return documents
+        document = (
+            f"Stock Data - Symbol: {quote_data.get('01. symbol', 'N/A')}, "
+            f"Open: {quote_data.get('02. open', 'N/A')}, "
+            f"High: {quote_data.get('03. high', 'N/A')}, "
+            f"Low: {quote_data.get('04. low', 'N/A')}, "
+            f"Price: {quote_data.get('05. price', 'N/A')}, "
+            f"Volume: {quote_data.get('06. volume', 'N/A')}, "
+            f"Latest Trading Day: {quote_data.get('07. latest trading day', 'N/A')}"
+        )
+        return [document]
 
 class MappingComponent:
     def __init__(self, mapping_file):
@@ -97,7 +99,7 @@ def financial_qa():
         return jsonify({"error": "No query provided"}), 400
     
     # Load the ticker mapping from the uploaded JSON file
-    mapping_file = "/path/to/your/ticker_mapping_full.json"  # Adjust to correct path
+    mapping_file = "/Users/yashdoshi/capstone_4/Capstone_Project/src/Agents/Investment_agent/ticker_mapping_full.json"  # Adjust to correct path
     mapping_component = MappingComponent(mapping_file)
     
     # Resolve user input to a ticker symbol
@@ -111,9 +113,9 @@ def financial_qa():
     stock_data = data_component.fetch_stock_data(symbol)
     if stock_data:
         documents = data_component.preprocess_stock_data(stock_data)
-        return jsonify({"answer": documents[:5]})  # Send first 5 stock data entries
+        return jsonify({"answer": documents})  # Send the stock data details
     else:
         return jsonify({"answer": "No data found for the requested symbol."})
 
 if __name__ == '__main__':
-    app.run(debug=True)  # Run Flask app on http://localhost:5000
+    app.run(debug=True)  
