@@ -190,7 +190,7 @@ const HomePage = () => {
         </Fade>
       </Box>
 
-      {/* Next Section: Investment Ideas */}
+      {/* Next Section: Investment.js Ideas */}
       <Box
         sx={{
           width: "90%",

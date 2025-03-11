@@ -383,201 +383,128 @@ class IncomeDataProcessor(BaseEstimator, TransformerMixin):
                 observed=observed_income
             )
 
-        return income_model
+            trace = pm.sample(
+                1000,
+                tune=1000,
+                cores=1,  # Reduce if memory constrained
+                return_inferencedata=False,
+                target_accept=0.9
+            )
+
+        return {
+            'model': income_model,
+            'trace': trace,
+            'age_mu': age_mu,
+            'family_mu': family_mu,
+            'earner_mu': earner_mu,
+            'size_mu': size_mu
+        }
 
 
 class IndividualIncomePredictor:
-    """Predict individual income using pre-computed zipcode statistics with full demographic integration."""
+    """Predict individual income using Bayesian posterior weights from zipcode-level models"""
 
     def __init__(self, zipcode_stats):
-        """
-        Parameters
-        ----------
-        zipcode_stats : dict
-            This is the output from IncomeDataProcessor.transform(df).
-            For each zipcode, you have a dictionary with:
-              {
-                'age_dist': {
-                  'distribution': {'15-24': p1, '25-44': p2, '45-64': p3, '65+': p4},
-                  'median_incomes': {'15-24': inc1, '25-44': inc2, '45-64': inc3, '65+': inc4}
-                },
-                'family_dist': {
-                  'distribution': {'married': pm, 'female_head': pf, 'male_head': ph},
-                  'incomes': {'married': im, 'female_head': if_, 'male_head': ih}
-                },
-                'earner_dist': {
-                  'distribution': {'0': p0, '1': p1, '2': p2, '3+': p3plus},
-                  'incomes': {'0': i0, '1': i1, '2': i2, '3+': i3plus}
-                },
-                'household_size_dist': {
-                  'distribution': {'2': p2, '3': p3, '4': p4, '5': p5, '6': p6, '7+': p7plus},
-                  'incomes': {'2': i2, '3': i3, '4': i4, '5': i5, '6': i6, '7+': i7plus}
-                },
-                'income_model': <PyMC model object>   # not used directly here, but available if needed
-              }
-        """
         self.zipcode_stats = zipcode_stats
 
     def predict_individual(self, num_samples=1):
-        """
-        Generate synthetic individuals by sampling demographics and applying an income model.
-        By default, this returns `num_samples` individuals *per* ZIP code in `self.zipcode_stats`.
-        """
+        """Generate synthetic individuals with Bayesian-weighted incomes"""
         individuals = []
 
         for zipcode, stats in self.zipcode_stats.items():
-            # Each 'stats' has keys: 'age_dist','family_dist','earner_dist','household_size_dist','income_model'
-            age_data = stats['age_dist']
-            family_data = stats['family_dist']
-            earner_data = stats['earner_dist']
-            size_data = stats['household_size_dist']
-
-            # Sample `num_samples` individuals for this ZIP
             for _ in range(num_samples):
-                # 1) Sample demographics from the distributions
                 demographics = self._sample_demographics(
                     zipcode,
-                    age_data['distribution'],
-                    family_data['distribution'],
-                    earner_data['distribution'],
-                    size_data['distribution']
+                    stats['age_dist']['distribution'],
+                    stats['family_dist']['distribution'],
+                    stats['earner_dist']['distribution'],
+                    stats['household_size_dist']['distribution']
                 )
 
-                # 2) Calculate a base income from the stored median/family incomes
-                base_income = self._calculate_base_income(demographics)
-
-                # 3) Apply additional (realistic) adjustments
-                final_income = self._apply_realistic_adjustments(base_income, demographics)
-
-                individuals.append({
-                    **demographics,
-                    'income': final_income
-                })
+                income = self._calculate_bayesian_income(demographics)
+                individuals.append({**demographics, 'income': income})
 
         return pd.DataFrame(individuals)
 
     def _sample_demographics(self, zipcode, age_dist, family_dist, earner_dist, size_dist):
-        """
-        Sample a random individual's demographics from the dictionary-based distributions.
-        - For 'age_group', we sample from {'15-24','25-44','45-64','65+'}
-        - For 'family_type', we sample from {'married','female_head','male_head'}
-        - For 'earners', we sample from {'0','1','2','3+'}
-        - For 'household_size', we sample from {'2','3','4','5','6','7+'}
-        """
+        """Sample demographics with proper type handling"""
         return {
             'zipcode': zipcode,
-            'age_group': np.random.choice(
-                list(age_dist.keys()),
-                p=list(age_dist.values())
-            ),
-            'family_type': np.random.choice(
-                list(family_dist.keys()),
-                p=list(family_dist.values())
-            ),
+            'age_group': self._safe_choice(age_dist),
+            'family_type': self._safe_choice(family_dist),
             'earners': self._sample_earners(earner_dist),
             'household_size': self._parse_household_size(
-                np.random.choice(list(size_dist.keys()), p=list(size_dist.values()))
+                self._safe_choice(size_dist)
             )
         }
 
-    def _calculate_base_income(self, demographics):
-        """
-        Compute a 'base' income using the demographic-based incomes from self.zipcode_stats.
-        We combine them with some weighting (0.4,0.3,0.2,0.1).
-        """
+    def _calculate_bayesian_income(self, demographics):
+        """Calculate income using posterior weights and demographic medians"""
         zipcode = demographics['zipcode']
         stats = self.zipcode_stats[zipcode]
+        model_data = stats['income_model']
 
-        # Grab the correct key for earners
-        earner_count = demographics['earners']
-        earner_key = '3+' if earner_count >= 3 else str(earner_count)
+        # Get posterior sample weights
+        weights = self._get_posterior_weights(zipcode)
 
-        # Grab the correct key for household size
-        # If it's int >=7, we map it to '7+'
-        hsize = demographics['household_size']
-        if isinstance(hsize, int) and hsize >= 7:
-            size_key = '7+'
-        else:
-            size_key = str(hsize)
+        # Get indices for each demographic category
+        age_idx = self._get_category_index(stats['age_dist'], 'age_group', demographics)
+        family_idx = self._get_category_index(stats['family_dist'], 'family_type', demographics)
+        earner_idx = self._get_earner_index(stats['earner_dist'], demographics)
+        size_idx = self._get_size_index(stats['household_size_dist'], demographics)
 
-        # Age income
-        age_income = stats['age_dist']['median_incomes'][demographics['age_group']]
-        # Family income
-        family_income = stats['family_dist']['incomes'][demographics['family_type']]
-        # Earner income
-        earner_income = stats['earner_dist']['incomes'][earner_key]
-        # Size income
-        size_income = stats['household_size_dist']['incomes'][size_key]
-
-        # Weighted combination (example: 0.4,0.3,0.2,0.1)
-        base_inc = (
-            0.4 * age_income +
-            0.3 * family_income +
-            0.2 * earner_income +
-            0.1 * size_income
+        # Calculate weighted components
+        return (
+                weights['age'][age_idx] * model_data['age_mu'][age_idx] +
+                weights['family'][family_idx] * model_data['family_mu'][family_idx] +
+                weights['earner'][earner_idx] * model_data['earner_mu'][earner_idx] +
+                weights['size'][size_idx] * model_data['size_mu'][size_idx]
         )
-        return base_inc
 
-    def _apply_realistic_adjustments(self, base_income, demographics):
-        """
-        Adjust income based on household size, number of earners, and family type.
-        """
-        # Convert household_size to integer if needed
-        household_size = demographics['household_size']
-        if not isinstance(household_size, int):
-            # If we stored '7+' or something, parse it
-            try:
-                household_size = int(household_size)
-            except ValueError:
-                # fallback if string like '7+'
-                household_size = 7
+    def _get_posterior_weights(self, zipcode):
+        """Sample weights from Bayesian posterior"""
+        trace = self.zipcode_stats[zipcode]['income_model']['trace']
+        idx = np.random.randint(len(trace))
+        return {
+            'age': trace['age_weights'][idx],
+            'family': trace['family_weights'][idx],
+            'earner': trace['earner_weights'][idx],
+            'size': trace['size_weights'][idx]
+        }
 
-        # For any size >=7, clamp or keep as is
-        if household_size < 1:
-            household_size = 1
+    def _get_category_index(self, dist_data, key, demographics):
+        """Get index position for a demographic category"""
+        categories = list(dist_data['distribution'].keys())
+        return categories.index(demographics[key])
 
-        # Example size factor: bigger households => smaller per-person factor
-        size_factor = 1.0 / (household_size ** 0.15)
+    def _get_earner_index(self, dist_data, demographics):
+        """Handle 3+ earner conversion"""
+        earners = list(dist_data['distribution'].keys())
+        earner_key = '3+' if demographics['earners'] >= 3 else str(demographics['earners'])
+        return earners.index(earner_key)
 
-        # Adjust for family type
-        family_mult = {
-            'married': 1.15,
-            'female_head': 1.05,
-            'male_head': 1.07
-        }.get(demographics['family_type'], 1.0)
+    def _get_size_index(self, dist_data, demographics):
+        """Handle household size conversion"""
+        sizes = list(dist_data['distribution'].keys())
+        size = demographics['household_size']
+        size_key = '7+' if (isinstance(size, int) and size >= 7) else str(size)
+        return sizes.index(size_key)
 
-        # If there are zero earners, set income to 0
-        if demographics['earners'] == 0:
-            return 0.0
+    def _safe_choice(self, dist):
+        """Numerically stable category sampling"""
+        probs = np.array(list(dist.values()), dtype=np.float64)
+        probs += 1e-8  # Add tiny epsilon to avoid zeros
+        probs /= probs.sum()
+        return np.random.choice(list(dist.keys()), p=probs)
 
-        # earner_factor: each additional earner beyond the first +18%
-        earner_factor = 1.0 + 0.18 * (demographics['earners'] - 1)
-
-        # Combine
-        varied_income = base_income * size_factor * earner_factor * family_mult
-        # Add random lognormal noise
-        varied_income *= np.random.lognormal(mean=0, sigma=0.1)
-
-        # Enforce a minimum
-        return max(varied_income, 15000)
+    def _sample_earners(self, dist):
+        """Sample earners with proper 3+ handling"""
+        key = self._safe_choice(dist)
+        return np.random.randint(3, 6) if key == '3+' else int(key)
 
     def _parse_household_size(self, size_str):
-        """
-        Convert household size strings to numerical or clamp them to '7+' if needed.
-        If you want a distribution for '7+', you can do so here.
-        """
+        """Convert size strings to numerical values"""
         if size_str == '7+':
-            # Example random choice for 7,8,9
             return np.random.choice([7, 8, 9], p=[0.7, 0.2, 0.1])
         return int(size_str)
-
-    def _sample_earners(self, earner_dist):
-        """
-        Sample the number of earners from earner_dist. If '3+' is picked, pick between 3..5.
-        """
-        earners_key = np.random.choice(list(earner_dist.keys()), p=list(earner_dist.values()))
-        if earners_key == '3+':
-            # random int between 3 and 5
-            return np.random.randint(3, 6)
-        return int(earners_key)
 

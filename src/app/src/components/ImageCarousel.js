@@ -6,7 +6,7 @@ const ImageCarousel = () => {
   const images = [
     { src: "https://via.placeholder.com/800x400", alt: "Financial Planning" },
     { src: "https://via.placeholder.com/800x400", alt: "Budgeting Tips" },
-    { src: "https://via.placeholder.com/800x400", alt: "Investment Opportunities" },
+    { src: "https://via.placeholder.com/800x400", alt: "Investment.js Opportunities" },
   ];
 
   return (
