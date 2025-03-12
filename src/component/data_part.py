@@ -224,15 +224,36 @@ class IncomeDataProcessor(BaseEstimator, TransformerMixin):
             # Get data for current zipcode
             zip_data = X[X['Zipcode'] == zipcode]
 
-            # Calculate statistics for this zipcode
-            stats = {
-                'age_dist': self._calculate_age_distribution(zip_data),
-                'family_dist': self._calculate_family_distribution(zip_data),
-                'earner_dist': self._calculate_earner_distribution(zip_data),
-                'household_size_dist': self._calculate_household_size(zip_data),
-                'income_model': self._build_bayesian_model(zip_data)
+            # Prepare distributions for the model
+            age_dist = self._calculate_age_distribution(zip_data)
+            family_dist = self._calculate_family_distribution(zip_data)
+            earner_dist = self._calculate_earner_distribution(zip_data)
+            size_dist = self._calculate_household_size(zip_data)
+
+            # Build & fit the Bayesian model for this zipcode
+            bayes_model = BayesianIncomeModel(
+                draws=2500,
+                tune=1500,
+                cores=34,
+                target_accept=0.9
+            )
+            bayes_model.fit(
+                zip_data=zip_data,
+                age_data=age_dist,
+                family_data=family_dist,
+                earner_data=earner_dist,
+                size_data=size_dist
+            )
+
+            # Store results
+            self.zipcode_stats_[zipcode] = {
+                'age_dist': age_dist,
+                'family_dist': family_dist,
+                'earner_dist': earner_dist,
+                'household_size_dist': size_dist,
+                'bayesian_model': bayes_model
             }
-            self.zipcode_stats_[zipcode] = stats
+
         return self
 
     def transform(self, X):
@@ -321,105 +342,6 @@ class IncomeDataProcessor(BaseEstimator, TransformerMixin):
         return {
             'distribution': {k: v / total for k, v in counts.items()},
             'incomes': {k: zip_data[v['income_col']].values[0] for k, v in sizes.items()}
-        }
-
-    def _build_bayesian_model(self, zip_data):
-        # Get your computed distributions & incomes
-        age_data = self._calculate_age_distribution(zip_data)
-        family_data = self._calculate_family_distribution(zip_data)
-        earner_data = self._calculate_earner_distribution(zip_data)
-        size_data = self._calculate_household_size(zip_data)
-
-        # Example: If zip_data['Household Income'] has multiple rows, collect them into a 1D numpy array.
-        # If you truly only have one row, it’s still fine, but a single data point won’t let the model learn very much!
-        observed_income = zip_data['Household Income'].values.astype(np.float64)
-
-        # Fetch raw probabilities (dict) and incomes
-        age_probs_data = np.array(list(age_data['distribution'].values()), dtype=np.float64)
-        family_probs_data = np.array(list(family_data['distribution'].values()), dtype=np.float64)
-        earner_probs_data = np.array(list(earner_data['distribution'].values()), dtype=np.float64)
-        size_probs_data = np.array(list(size_data['distribution'].values()), dtype=np.float64)
-
-        # Convert incomes to float arrays
-        age_mu_data = np.array(list(age_data['median_incomes'].values()), dtype=np.float64)
-        family_mu_data = np.array(list(family_data['incomes'].values()), dtype=np.float64)
-        earner_mu_data = np.array(list(earner_data['incomes'].values()), dtype=np.float64)
-        size_mu_data = np.array(list(size_data['incomes'].values()), dtype=np.float64)
-
-        # A small constant to avoid zeros in the Dirichlet
-        tiny = 1e-3
-        age_probs_data = np.clip(age_probs_data, tiny, None)
-        family_probs_data = np.clip(family_probs_data, tiny, None)
-        earner_probs_data = np.clip(earner_probs_data, tiny, None)
-        size_probs_data = np.clip(size_probs_data, tiny, None)
-
-        with pm.Model() as income_model:
-            # Instead of forcing the Dirichlet's a=... to the distribution from the dictionary,
-            # we can treat that distribution as a baseline "shape" but scale it by latent alpha parameters
-            # so that the model can deviate from your prior if the data suggests otherwise.
-            # E.g., Dirichlet(a = alpha * baseline_probs).
-            age_alpha = pm.Exponential('age_alpha', lam=1.0, shape=len(age_probs_data))
-            family_alpha = pm.Exponential('family_alpha', lam=1.0, shape=len(family_probs_data))
-            earner_alpha = pm.Exponential('earner_alpha', lam=1.0, shape=len(earner_probs_data))
-            size_alpha = pm.Exponential('size_alpha', lam=1.0, shape=len(size_probs_data))
-
-            age_weights = pm.Dirichlet('age_weights', a=age_alpha * age_probs_data)
-            family_weights = pm.Dirichlet('family_weights', a=family_alpha * family_probs_data)
-            earner_weights = pm.Dirichlet('earner_weights', a=earner_alpha * earner_probs_data)
-            size_weights = pm.Dirichlet('size_weights', a=size_alpha * size_probs_data)
-
-            # If you also want to *learn* each category’s average income rather than treat them as fixed,
-            # you can put priors on them.  Otherwise, you can keep them fixed from your dictionary.
-            # Example of placing Normal priors around your dictionary’s median incomes:
-            age_mu = pm.Normal('age_mu',
-                               mu=age_mu_data,
-                               sigma=1e4,
-                               shape=len(age_mu_data))  # shape must match # categories
-            family_mu = pm.Normal('family_mu',
-                                  mu=family_mu_data,
-                                  sigma=1e4,
-                                  shape=len(family_mu_data))
-            earner_mu = pm.Normal('earner_mu',
-                                  mu=earner_mu_data,
-                                  sigma=1e4,
-                                  shape=len(earner_mu_data))
-            size_mu = pm.Normal('size_mu',
-                                mu=size_mu_data,
-                                sigma=1e4,
-                                shape=len(size_mu_data))
-
-            # Weighted sum of each category’s mean
-            mu_income = (
-                    pm.math.dot(age_weights, age_mu) +
-                    pm.math.dot(family_weights, family_mu) +
-                    pm.math.dot(earner_weights, earner_mu) +
-                    pm.math.dot(size_weights, size_mu)
-            )
-
-            # Prior for scale
-            sigma = pm.HalfNormal('sigma', sigma=1e5)
-
-            # If you expect heavy tails or skew, you could do:
-            #   nu = pm.Exponential('nu', 1/30.)
-            #   pm.StudentT('income', nu=nu, mu=mu_income, sigma=sigma, observed=observed_income)
-            # Otherwise, you can keep pm.Normal. Another common approach is pm.Lognormal.
-            pm.Normal('income', mu=mu_income, sigma=sigma, observed=observed_income)
-
-            trace = pm.sample(
-                draws=3000,  # Increase draws
-                tune=2000,  # Increase tuning
-                cores=32,  # Possibly more cores if you have them
-                target_accept=0.9  # Higher target accept can improve mixing
-            )
-
-        return {
-            'model': income_model,
-            'trace': trace,
-            # Return the arrays or random variables as needed
-            'age_mu': age_mu_data,  # or age_mu if learned
-            'family_mu': family_mu_data,  # or family_mu if learned
-            'earner_mu': earner_mu_data,  # or earner_mu if learned
-            'size_mu': size_mu_data  # or size_mu if learned
         }
 
 
@@ -530,3 +452,110 @@ class IndividualIncomePredictor:
             return np.random.choice([7, 8, 9], p=[0.7, 0.2, 0.1])
         return int(size_str)
 
+class BayesianIncomeModel:
+    def __init__(self,
+                 draws=2500,
+                 tune=1500,
+                 cores=34,
+                 target_accept=0.9):
+        self.draws = draws
+        self.tune = tune
+        self.cores = cores
+        self.target_accept = target_accept
+
+    def fit(self, zip_data,
+            age_data,
+            family_data,
+            earner_data,
+            size_data):
+        """
+        zip_data: Pandas DataFrame subset for a single zipcode
+        age_data, family_data, earner_data, size_data: dicts with
+            'distribution' and 'incomes' or 'median_incomes'
+        """
+        observed_income = zip_data['Household Income'].values.astype(np.float64)
+
+        # Convert dict distributions to arrays
+        tiny = 1e-3
+        age_probs = np.clip(
+            np.array(list(age_data['distribution'].values()), dtype=np.float64),
+            tiny, None
+        )
+        fam_probs = np.clip(
+            np.array(list(family_data['distribution'].values()), dtype=np.float64),
+            tiny, None
+        )
+        earn_probs = np.clip(
+            np.array(list(earner_data['distribution'].values()), dtype=np.float64),
+            tiny, None
+        )
+        size_probs = np.clip(
+            np.array(list(size_data['distribution'].values()), dtype=np.float64),
+            tiny, None
+        )
+
+        # Convert incomes
+        age_mu_data = np.array(list(age_data['median_incomes'].values()), dtype=np.float64)
+        fam_mu_data = np.array(list(family_data['incomes'].values()), dtype=np.float64)
+        earn_mu_data = np.array(list(earner_data['incomes'].values()), dtype=np.float64)
+        size_mu_data = np.array(list(size_data['incomes'].values()), dtype=np.float64)
+
+        with pm.Model() as model:
+            # Latent scaling for each distribution
+            age_alpha = pm.Exponential('age_alpha', lam=1.0, shape=len(age_probs))
+            fam_alpha = pm.Exponential('fam_alpha', lam=1.0, shape=len(fam_probs))
+            earn_alpha = pm.Exponential('earn_alpha', lam=1.0, shape=len(earn_probs))
+            size_alpha = pm.Exponential('size_alpha', lam=1.0, shape=len(size_probs))
+
+            age_weights = pm.Dirichlet('age_weights', a=age_alpha * age_probs)
+            fam_weights = pm.Dirichlet('fam_weights', a=fam_alpha * fam_probs)
+            earn_weights = pm.Dirichlet('earn_weights', a=earn_alpha * earn_probs)
+            size_weights = pm.Dirichlet('size_weights', a=size_alpha * size_probs)
+
+            # Means for each category
+            # (Here, we allow them to vary, but you could keep them fixed if you want.)
+            age_mu = pm.Normal('age_mu', mu=age_mu_data, sigma=1e4, shape=len(age_mu_data))
+            fam_mu = pm.Normal('fam_mu', mu=fam_mu_data, sigma=1e4, shape=len(fam_mu_data))
+            earn_mu = pm.Normal('earn_mu', mu=earn_mu_data, sigma=1e4, shape=len(earn_mu_data))
+            size_mu = pm.Normal('size_mu', mu=size_mu_data, sigma=1e4, shape=len(size_mu_data))
+
+            # Weighted sum for final income
+            mu_income = (
+                pm.math.dot(age_weights, age_mu) +
+                pm.math.dot(fam_weights, fam_mu) +
+                pm.math.dot(earn_weights, earn_mu) +
+                pm.math.dot(size_weights, size_mu)
+            )
+
+            sigma = pm.HalfNormal('sigma', sigma=1e5)
+
+            # Example using Normal; you could also do StudentT or LogNormal
+            pm.Normal('income', mu=mu_income, sigma=sigma, observed=observed_income)
+
+            # Sample
+            trace = pm.sample(
+                draws=self.draws,
+                tune=self.tune,
+                cores=self.cores,
+                target_accept=self.target_accept
+            )
+
+        self.model_ = model
+        self.trace_ = trace
+        return self
+
+    def save_trace(self, path="my_trace.nc"):
+        """Save the trace to a NetCDF file with ArviZ."""
+        import arviz as az
+        az.to_netcdf(self.trace_, path)
+        print(f"Trace saved to {path}")
+
+    def load_trace(self, path="my_trace.nc"):
+        """Load the trace from disk."""
+        import arviz as az
+        self.trace_ = az.from_netcdf(path)
+        print(f"Trace loaded from {path}")
+        # Note: This returns an InferenceData object in PyMC>=4
+
+    def get_trace(self):
+        return self.trace_
