@@ -4,7 +4,7 @@ import { AppBar, Toolbar, Typography, Button, Box } from "@mui/material";
 const Header = () => {
   return (
     <AppBar
-      position="absolute"
+      position="fixed"
       sx={{
         background: "transparent",
         boxShadow: "none",
