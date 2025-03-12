@@ -1,4 +1,4 @@
-from src.component.data_part import CSVColumnCleaner
+from src.component.customer import CSVColumnCleaner
 
 common_phrases = {
     # Age-related columns
