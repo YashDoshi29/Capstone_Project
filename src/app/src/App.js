@@ -6,6 +6,7 @@ import SignUpPage from "./pages/Signup";
 import "./styles/App.css";
 import Dashboard from "./pages/Dashboard";
 import InvestmentPage from "./pages/Investment.js";
+import synthesizer from "./pages/synthesizer.js";
 
 const App = () => {
   return (
@@ -19,6 +20,7 @@ const App = () => {
           <Route path="/signin" element={<SignInPage />} />
         <Route path="/signup" element={<SignUpPage />} />
         <Route path="/Investment" element={<InvestmentPage />} />
+         <Route path={"/synthesizer"} element={<synthesizer />} />
       </Routes>
     </Router>
   );

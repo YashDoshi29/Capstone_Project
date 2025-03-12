@@ -324,80 +324,102 @@ class IncomeDataProcessor(BaseEstimator, TransformerMixin):
         }
 
     def _build_bayesian_model(self, zip_data):
-        # Fetch your calculated distributions
+        # Get your computed distributions & incomes
         age_data = self._calculate_age_distribution(zip_data)
         family_data = self._calculate_family_distribution(zip_data)
         earner_data = self._calculate_earner_distribution(zip_data)
         size_data = self._calculate_household_size(zip_data)
 
+        # Example: If zip_data['Household Income'] has multiple rows, collect them into a 1D numpy array.
+        # If you truly only have one row, it’s still fine, but a single data point won’t let the model learn very much!
+        observed_income = zip_data['Household Income'].values.astype(np.float64)
+
+        # Fetch raw probabilities (dict) and incomes
+        age_probs_data = np.array(list(age_data['distribution'].values()), dtype=np.float64)
+        family_probs_data = np.array(list(family_data['distribution'].values()), dtype=np.float64)
+        earner_probs_data = np.array(list(earner_data['distribution'].values()), dtype=np.float64)
+        size_probs_data = np.array(list(size_data['distribution'].values()), dtype=np.float64)
+
+        # Convert incomes to float arrays
+        age_mu_data = np.array(list(age_data['median_incomes'].values()), dtype=np.float64)
+        family_mu_data = np.array(list(family_data['incomes'].values()), dtype=np.float64)
+        earner_mu_data = np.array(list(earner_data['incomes'].values()), dtype=np.float64)
+        size_mu_data = np.array(list(size_data['incomes'].values()), dtype=np.float64)
+
+        # A small constant to avoid zeros in the Dirichlet
+        tiny = 1e-3
+        age_probs_data = np.clip(age_probs_data, tiny, None)
+        family_probs_data = np.clip(family_probs_data, tiny, None)
+        earner_probs_data = np.clip(earner_probs_data, tiny, None)
+        size_probs_data = np.clip(size_probs_data, tiny, None)
+
         with pm.Model() as income_model:
-            # Convert dictionary values to numpy arrays
-            # and ensure they are strictly positive for Dirichlet
-            tiny = 1e-3  # small constant to avoid zeros in the Dirichlet
-            age_probs = np.array(list(age_data['distribution'].values()), dtype=np.float64)
-            family_probs = np.array(list(family_data['distribution'].values()), dtype=np.float64)
-            earner_probs = np.array(list(earner_data['distribution'].values()), dtype=np.float64)
-            size_probs = np.array(list(size_data['distribution'].values()), dtype=np.float64)
+            # Instead of forcing the Dirichlet's a=... to the distribution from the dictionary,
+            # we can treat that distribution as a baseline "shape" but scale it by latent alpha parameters
+            # so that the model can deviate from your prior if the data suggests otherwise.
+            # E.g., Dirichlet(a = alpha * baseline_probs).
+            age_alpha = pm.Exponential('age_alpha', lam=1.0, shape=len(age_probs_data))
+            family_alpha = pm.Exponential('family_alpha', lam=1.0, shape=len(family_probs_data))
+            earner_alpha = pm.Exponential('earner_alpha', lam=1.0, shape=len(earner_probs_data))
+            size_alpha = pm.Exponential('size_alpha', lam=1.0, shape=len(size_probs_data))
 
-            # Add tiny if needed to avoid zeros:
-            age_probs = np.clip(age_probs, tiny, None)
-            family_probs = np.clip(family_probs, tiny, None)
-            earner_probs = np.clip(earner_probs, tiny, None)
-            size_probs = np.clip(size_probs, tiny, None)
+            age_weights = pm.Dirichlet('age_weights', a=age_alpha * age_probs_data)
+            family_weights = pm.Dirichlet('family_weights', a=family_alpha * family_probs_data)
+            earner_weights = pm.Dirichlet('earner_weights', a=earner_alpha * earner_probs_data)
+            size_weights = pm.Dirichlet('size_weights', a=size_alpha * size_probs_data)
 
-            # Define Dirichlet priors
-            age_weights = pm.Dirichlet('age_weights', a=age_probs)
-            family_weights = pm.Dirichlet('family_weights', a=family_probs)
-            earner_weights = pm.Dirichlet('earner_weights', a=earner_probs)
-            size_weights = pm.Dirichlet('size_weights', a=size_probs)
+            # If you also want to *learn* each category’s average income rather than treat them as fixed,
+            # you can put priors on them.  Otherwise, you can keep them fixed from your dictionary.
+            # Example of placing Normal priors around your dictionary’s median incomes:
+            age_mu = pm.Normal('age_mu',
+                               mu=age_mu_data,
+                               sigma=1e4,
+                               shape=len(age_mu_data))  # shape must match # categories
+            family_mu = pm.Normal('family_mu',
+                                  mu=family_mu_data,
+                                  sigma=1e4,
+                                  shape=len(family_mu_data))
+            earner_mu = pm.Normal('earner_mu',
+                                  mu=earner_mu_data,
+                                  sigma=1e4,
+                                  shape=len(earner_mu_data))
+            size_mu = pm.Normal('size_mu',
+                                mu=size_mu_data,
+                                sigma=1e4,
+                                shape=len(size_mu_data))
 
-            # Convert incomes to float arrays
-            # Make sure the lengths match the above distributions
-            age_mu = np.array(list(age_data['median_incomes'].values()), dtype=np.float64)
-            family_mu = np.array(list(family_data['incomes'].values()), dtype=np.float64)
-            earner_mu = np.array(list(earner_data['incomes'].values()), dtype=np.float64)
-            size_mu = np.array(list(size_data['incomes'].values()), dtype=np.float64)
-
-            # Compute the linear combination of means
-            # Each dot(...) yields a scalar if shapes match
+            # Weighted sum of each category’s mean
             mu_income = (
-                    pm.math.dot(age_weights, age_mu)
-                    + pm.math.dot(family_weights, family_mu)
-                    + pm.math.dot(earner_weights, earner_mu)
-                    + pm.math.dot(size_weights, size_mu)
+                    pm.math.dot(age_weights, age_mu) +
+                    pm.math.dot(family_weights, family_mu) +
+                    pm.math.dot(earner_weights, earner_mu) +
+                    pm.math.dot(size_weights, size_mu)
             )
 
-            # Prior for sigma
+            # Prior for scale
             sigma = pm.HalfNormal('sigma', sigma=1e5)
 
-            # Observed data
-            # If zip_data['Household Income'] is just one row, this might be a single float
-            observed_income = zip_data['Household Income'].values[0].astype(np.float64)
-            # If you have multiple data points, remove [0] and keep the full array
-
-            # Likelihood
-            pm.Normal(
-                'income',
-                mu=mu_income,
-                sigma=sigma,
-                observed=observed_income
-            )
+            # If you expect heavy tails or skew, you could do:
+            #   nu = pm.Exponential('nu', 1/30.)
+            #   pm.StudentT('income', nu=nu, mu=mu_income, sigma=sigma, observed=observed_income)
+            # Otherwise, you can keep pm.Normal. Another common approach is pm.Lognormal.
+            pm.Normal('income', mu=mu_income, sigma=sigma, observed=observed_income)
 
             trace = pm.sample(
-                1000,
-                tune=1000,
-                cores=1,  # Reduce if memory constrained
-                return_inferencedata=False,
-                target_accept=0.9
+                draws=3000,  # Increase draws
+                tune=2000,  # Increase tuning
+                cores=32,  # Possibly more cores if you have them
+                target_accept=0.9  # Higher target accept can improve mixing
             )
 
         return {
             'model': income_model,
             'trace': trace,
-            'age_mu': age_mu,
-            'family_mu': family_mu,
-            'earner_mu': earner_mu,
-            'size_mu': size_mu
+            # Return the arrays or random variables as needed
+            'age_mu': age_mu_data,  # or age_mu if learned
+            'family_mu': family_mu_data,  # or family_mu if learned
+            'earner_mu': earner_mu_data,  # or earner_mu if learned
+            'size_mu': size_mu_data  # or size_mu if learned
         }
 
 

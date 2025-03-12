@@ -12,7 +12,7 @@ cleaned_data = cleaner.fit_transform(income_data)
 processor.fit(cleaned_data)
 zipcode_stats = processor.zipcode_stats_
 predictor = IndividualIncomePredictor(zipcode_stats)
-customers = predictor.predict_individual(num_samples=1)
+customers = predictor.predict_individual(num_samples=1000)
 
 customers.to_csv('customers.csv', index=False)
 print(customers[['zipcode', 'age_group', 'family_type', 'household_size', 'earners', 'income']].to_markdown(index=False))
