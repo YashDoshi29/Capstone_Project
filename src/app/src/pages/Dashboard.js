@@ -3,7 +3,7 @@ import { Box, Typography, AppBar, Toolbar, Button, Grid, Card, CardContent } fro
 import { Link } from "react-router-dom";
 import { useSpring, animated } from "@react-spring/web";
 import { Fade } from "react-awesome-reveal";
-import { PieChart, Pie, Cell, Legend } from "recharts";
+import { PieChart, Pie, Cell, Legend , Tooltip} from "recharts";
 import Papa from "papaparse";
 
 const COLORS = ["#FF6384", "#36A2EB", "#FFCE56", "#4CAF50", "#9C27B0", "#FF9800"];
@@ -107,8 +107,8 @@ const Dashboard = () => {
         setError("Unsupported file type. Please upload a CSV or PDF.");
       }
     } catch (error) {
-      console.error("Error processing file:", error);
-      setError("Error processing file: " + error.message);
+      console.error("Please upload the file again:", error);
+      setError("Please upload the file again: " + error.message);
     } finally {
       setLoading(false);
     }
@@ -155,20 +155,18 @@ const Dashboard = () => {
             <Button component={Link} to="/docs" variant="text" sx={{ color: "white" }}>
               Docs
             </Button>
-            <Button component={Link} to="/FinancialNews" variant="text" sx={{ color: "white" }}>
-              News
+            <Button component={Link} to="/optimization" variant="text" sx={{ color: "white" }}>
+              Optimization
             </Button>
             <Button component={Link} to="/investment" variant="text" sx={{ color: "white" }}>
               Investment
             </Button>
-            <Button component={Link} to="/expense-optimization" variant="text" sx={{ color: "white" }}>
-              Expense Optimization
+            <Button component={Link} to="/FinancialNews" variant="text" sx={{ color: "white" }}>
+              News
             </Button>
           </Box>
         </Toolbar>
       </AppBar>
-
-      
 
       <Box sx={{ pt: "100px", textAlign: "center" }}>
         <animated.div style={heroAnimation}>
@@ -176,7 +174,7 @@ const Dashboard = () => {
             Budget Classification
           </Typography>
         </animated.div>
-      
+
         <Fade triggerOnce>
           <Grid container spacing={3} justifyContent="center">
             <Grid item xs={12} md={6}>
@@ -189,24 +187,22 @@ const Dashboard = () => {
                   {error && <Typography color="red">{error}</Typography>}
                   {transactions.length > 0 && (
                     <PieChart width={700} height={750}>
-                      <Pie
-                        data={pieData}
-                        cx="53%"
-                        cy="49%"
-                        outerRadius={200}
-                        fill="#8884d8"
-                        dataKey="value"
-                        label={({ name, value }) => `${name}: $${value.toFixed(2)}`}
-                      >
+                      <Pie data={pieData} cx="53%" cy="49%" outerRadius={200} fill="#8884d8" dataKey="value" label={({ name, value }) => `${name}: $${value.toFixed(2)}`}>
                         {pieData.map((_, index) => (
                           <Cell key={index} fill={COLORS[index % COLORS.length]} />
                         ))}
                       </Pie>
-                      <Legend 
-                        layout="horizontal"
-                        align="center"
-                        verticalAlign="bottom"
-                        wrapperStyle={{ marginBottom: "45px" }}
+                      <Legend layout="horizontal" align="center" verticalAlign="bottom" wrapperStyle={{ marginBottom: "45px" }} />
+                      <Tooltip
+                        content={({ payload }) => {
+                          if (payload && payload.length) {
+                            const { name, value } = payload[0];
+                            return <div style={{ color: "white", background: "#333", padding: "5px", borderRadius: "5px" }}>
+                              {name}: ${value.toFixed(2)}
+                            </div>;
+                          }
+                          return null;
+                        }}
                       />
                     </PieChart>
                   )}
@@ -216,31 +212,19 @@ const Dashboard = () => {
           </Grid>
         </Fade>
       </Box>
-    
-    
-    {/* Go to link */}
-    <Box sx={{ textAlign: "center", mt: 4 }}>
-    <Button component={Link} to="/investment" variant="contained" color="primary" sx={{ padding: "10px 20px" }}>
-      Go to Financial Assistant
-    </Button>
+
+      {/* Go to link */}
+      <Box sx={{ textAlign: "center", mt: 4 }}>
+        <Button component={Link} to="/optimization" variant="contained" color="primary" sx={{ padding: "10px 20px" }}>
+          Go to Budget Optimization
+        </Button>
+      </Box>
+
+      {/* Footer */}
+      <Box component="footer" sx={{ width: "100%", padding: "1rem", backgroundColor: "#1c1c1c", color: "white", textAlign: "center" }}>
+        <Typography variant="body2">© {new Date().getFullYear()} Financial Assistant. All rights reserved.</Typography>
+      </Box>
     </Box>
-  
-    {/* Footer */}
-    <Box
-    component="footer"
-    sx={{
-      width: "100%",
-      padding: "1rem",
-      backgroundColor: "#1c1c1c",
-      color: "white",
-      textAlign: "center",
-    }}
-  >
-    <Typography variant="body2">
-      © {new Date().getFullYear()} Financial Assistant. All rights reserved.
-    </Typography>
-  </Box>
-  </Box>
   );
 };
 
