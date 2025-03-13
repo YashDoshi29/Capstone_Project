@@ -247,10 +247,10 @@ def setup_rag_model(index_dir, dataset_path):
         config.index_path = f"{index_dir}/stock_index.index"
         
         question_encoder_tokenizer = DPRQuestionEncoderTokenizer.from_pretrained(
-            "facebook/dpr-question_encoder-single-nq-base"
+            "https://huggingface.co/facebook/dpr-question_encoder-single-nq-base"
         )
         context_encoder_tokenizer = DPRContextEncoderTokenizer.from_pretrained(
-            "facebook/dpr-ctx_encoder-single-nq-base"
+            "https://huggingface.co/facebook/dpr-ctx_encoder-single-nq-base"
         )
         generator_tokenizer = BartTokenizer.from_pretrained("facebook/bart-large")
         
