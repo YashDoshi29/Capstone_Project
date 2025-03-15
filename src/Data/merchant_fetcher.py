@@ -129,7 +129,6 @@ def cache_merchant_data():
 
     return pd.read_csv(CLEANED_CSV)
 
-
 # Run fetch and clean function if executed directly
 if __name__ == "__main__":
     merchants_df = cache_merchant_data()
