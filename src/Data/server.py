@@ -1,60 +1,59 @@
-from fastapi import FastAPI, HTTPException
-import arviz as az
+from flask import Flask, request, jsonify
+import joblib
 import numpy as np
-import pandas as pd
-import os
+import re
 
-app = FastAPI()
+app = Flask(__name__)
 
-# Load traces once at startup
-TRACE_DIR = "traces"
-loaded_traces = {}
+# Load the model
+model = joblib.load("income_model.pkl")
 
+def parse_user_input(user_input):
+    """
+    Parse user input to extract the number of profiles and zipcode.
+    """
+    # Default values
+    num_profiles = 100  # Default number of profiles
+    zipcode = None  # Default zipcode (None means all zipcodes)
 
-@app.on_event("startup")
-def load_traces():
-    """Loads all saved traces from the traces directory"""
-    global loaded_traces
-    for file in os.listdir(TRACE_DIR):
-        if file.endswith(".nc"):
-            zipcode = file.replace("trace_", "").replace(".nc", "")
-            loaded_traces[zipcode] = az.from_netcdf(os.path.join(TRACE_DIR, file))
-    print(f"Loaded {len(loaded_traces)} traces.")
+    # Extract number of profiles
+    num_match = re.search(r"(\d+)\s*(?:customer|profile)", user_input, re.IGNORECASE)
+    if num_match:
+        num_profiles = int(num_match.group(1))
 
+    # Extract zipcode
+    zip_match = re.search(r"zipcode\s*(\d+)", user_input, re.IGNORECASE)
+    if zip_match:
+        zipcode = int(zip_match.group(1))
 
-@app.get("/")
-def home():
-    return {"message": "Bayesian Income Prediction API is running"}
+    return num_profiles, zipcode
 
+@app.route("/generate", methods=["POST"])
+def generate_profiles():
+    # Get user input from the request
+    data = request.json
+    user_input = data.get("input", "").strip()
 
-@app.get("/available_zipcodes")
-def get_available_zipcodes():
-    """Return the list of available zipcodes"""
-    return {"zipcodes": list(loaded_traces.keys())}
+    # Check if the input is a valid generation command
+    if not re.search(r"(generate|create|make)\s*\d*\s*(customer|profile)", user_input, re.IGNORECASE):
+        return jsonify({"error": "Sorry, that's not a valid generation command. Please try again."})
 
+    # Parse user input
+    num_profiles, zipcode = parse_user_input(user_input)
 
-@app.get("/generate_data/{zipcode}")
-def generate_data(zipcode: str, num_samples: int = 100):
-    """Generate synthetic income data for a given zipcode"""
-    if zipcode not in loaded_traces:
-        raise HTTPException(status_code=404, detail="Zipcode trace not found.")
+    # Generate customer profiles
+    try:
+        synthetic_data = model.generate(num_profiles)
 
-    trace = loaded_traces[zipcode]
+        # Filter by zipcode if specified
+        if zipcode:
+            synthetic_data = synthetic_data[synthetic_data["zipcode"] == zipcode]
 
-    # Extract the posterior samples
-    posterior_ds = trace.posterior
-    n_draws = posterior_ds.sizes["draw"]
-    random_draw_idx = np.random.randint(0, n_draws)
+        # Convert the DataFrame to a list of dictionaries
+        results = synthetic_data.to_dict(orient="records")
+        return jsonify({"results": results})
+    except Exception as e:
+        return jsonify({"error": f"An error occurred: {str(e)}"})
 
-    # Sample from posterior
-    sampled_income = np.random.normal(
-        loc=float(posterior_ds["income"].values[0, random_draw_idx]),
-        scale=float(posterior_ds["sigma"].values[0, random_draw_idx]),
-        size=num_samples
-    )
-
-    # Convert to DataFrame
-    df = pd.DataFrame({"zipcode": zipcode, "income": sampled_income})
-    return df.to_dict(orient="records")
-
-# Run with: uvicorn server:app --reload
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)

@@ -1,25 +1,18 @@
 from pathlib import Path
 import pandas as pd
 import arviz as az
-from pathlib import Path
-from src.component.customer import IncomeDataProcessor, IncomeDataCleaner
-from src.component.customer import IndividualIncomePredictor
+from src.component.customer import IncomeDataCleaner
+from src.component.customer import AdvancedIncomeModel
+import os
 
-# 1) Clean and process the data
-income_data = pd.read_csv('cleaned_income_data.csv')
-cleaner = IncomeDataCleaner()
-cleaned_data = cleaner.fit_transform(income_data)
 
-processor = IncomeDataProcessor()
-processor.fit(cleaned_data)  # This now trains the Bayesian models inside
+script_dir = os.path.dirname(os.path.abspath(__file__))
+file_path = os.path.join(script_dir, 'cleaned_income_data.csv')
+income_data = pd.read_csv(file_path)
 
-zipcode_stats = processor.zipcode_stats_
+model = AdvancedIncomeModel(epochs=50)
+model.fit(income_data)
+model.save("income_model.pkl")
 
-# 2) Save Bayesian traces for each zipcode
-Path("traces").mkdir(exist_ok=True)  # Ensure traces directory exists
-
-for zipcode, stats in zipcode_stats.items():
-    bayes_model = stats['bayesian_model']
-    trace_path = f"traces/trace_{zipcode}.nc"
-    az.to_netcdf(bayes_model.trace_, trace_path)
-    print(f"Trace saved to {trace_path}")
+synthetic_households = model.generate(1000)
+print(synthetic_households.head())

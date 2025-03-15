@@ -164,6 +164,9 @@ const Dashboard = () => {
             <Button component={Link} to="/FinancialNews" variant="text" sx={{ color: "white" }}>
               News
             </Button>
+            <Button component={Link} to="/Synthesizer" variant="text" sx={{ color: "white" }}>
+              synthesizer
+            </Button>
           </Box>
         </Toolbar>
       </AppBar>

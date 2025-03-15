@@ -1,10 +1,11 @@
 import pandas as pd
 import numpy as np
-from sklearn.preprocessing import MinMaxScaler
-from scipy import stats
 from sklearn.base import BaseEstimator, TransformerMixin
-import pymc as pm
-import arviz as az
+import time
+import random
+from sdv.single_table import CTGANSynthesizer
+from sdv.metadata.single_table import SingleTableMetadata
+import joblib
 
 
 class CSVColumnCleaner:
@@ -48,8 +49,6 @@ class CSVColumnCleaner:
 
         df.to_csv(output_path, index=False)
         return df
-
-
 
 class IncomeDataCleaner(BaseEstimator, TransformerMixin):
     """Handles missing values and data formatting for income data, applied to all columns."""
@@ -170,16 +169,12 @@ class IncomeDataCleaner(BaseEstimator, TransformerMixin):
             if col in X.columns and not np.issubdtype(X[col].dtype, np.number):
                 raise TypeError(f"Column '{col}' is not numeric after cleaning.")
 
-
-
-#Customer data synthesizer
-
 class IncomeDataProcessor(BaseEstimator, TransformerMixin):
-    """Advanced processor for census-style income data"""
+    """Advanced processor for census-style income data,
+       building ONE aggregated distribution across all ZIP codes."""
 
     def __init__(self):
         self.age_brackets = ['15-24', '25-44', '45-64', '65+']
-        self.family_columns = ['Married-couple families', 'Female householder', 'Male householder']
 
         # Define all required columns for validation
         self.required_columns = [
@@ -215,350 +210,514 @@ class IncomeDataProcessor(BaseEstimator, TransformerMixin):
             # Target variable
             'Household Income'
         ]
-
+        self.model_ = None  # We'll store the single aggregated distribution here
 
     def fit(self, X, y=None):
+        """Aggregate bracket distributions + average incomes across the entire dataset (all ZIP codes)."""
         self._validate_columns(X)
-        self.zipcode_stats_ = {}
 
-        for zipcode in X['Zipcode'].unique():
-            zip_data = X[X['Zipcode'] == zipcode]
+        # Summation across entire dataset for each bracket => build global distributions
+        age_dist = self._calculate_age_distribution(X)
+        family_dist = self._calculate_family_distribution(X)
+        earner_dist = self._calculate_earner_distribution(X)
+        size_dist = self._calculate_household_size(X)
 
-            # Prepare distributions for the model
-            age_dist = self._calculate_age_distribution(zip_data)
-            family_dist = self._calculate_family_distribution(zip_data)
-            earner_dist = self._calculate_earner_distribution(zip_data)
-            size_dist = self._calculate_household_size(zip_data)
-
-            # Build & fit the Bayesian model for this zipcode
-            bayes_model = BayesianIncomeModel(
-                draws=2500,
-                tune=1500,
-                cores=34,
-                target_accept=0.9
-            )
-            bayes_model.fit(
-                zip_data=zip_data,
-                age_data=age_dist,
-                family_data=family_dist,
-                earner_data=earner_dist,
-                size_data=size_dist
-            )
-
-            # Store results
-            self.zipcode_stats_[zipcode] = {
-                'age_dist': age_dist,
-                'family_dist': family_dist,
-                'earner_dist': earner_dist,
-                'household_size_dist': size_dist,
-                'bayesian_model': bayes_model
-            }
-
+        # Store them as one global model (no per-ZIP logic)
+        self.model_ = {
+            'age_dist': age_dist,    # { "distribution": {...}, "incomes": {...} }
+            'family_dist': family_dist,
+            'earner_dist': earner_dist,
+            'size_dist': size_dist
+        }
         return self
 
     def transform(self, X):
-        return self.zipcode_stats_
+        """Return the single global model (dict) so we can sample from it downstream."""
+        return self.model_
 
     def _validate_columns(self, X):
         missing = set(self.required_columns) - set(X.columns)
         if missing:
             raise KeyError(f"Missing required columns: {missing}")
 
-    def _calculate_age_distribution(self, zip_data):
+    def _calculate_age_distribution(self, df):
+        """Aggregate all data to produce a global age distribution + average incomes."""
         age_bracket_map = {
             '15-24': '15 to 24 years',
             '25-44': '25 to 44 years',
             '45-64': '45 to 64 years',
-            '65+': '65 years and over'
+            '65+':   '65 years and over'
         }
 
-        household_counts = {
-            bracket: zip_data[f'Number Household Income ({age_bracket_map[bracket]})'].values[0]
-            for bracket in self.age_brackets
-        }
-        total_households = sum(household_counts.values())
+        total_count = 0
+        dist_counts = {}
+        sum_incomes = {}
+
+        for bracket in self.age_brackets:
+            num_col = f'Number Household Income ({age_bracket_map[bracket]})'
+            inc_col = f'Household Income ({age_bracket_map[bracket]})'
+
+            count_sum = df[num_col].sum()
+            income_sum = df[inc_col].sum()
+            total_count += count_sum
+
+            dist_counts[bracket] = count_sum
+            sum_incomes[bracket] = income_sum
+
+        # Convert raw counts to fractions & compute average incomes
+        distribution = {}
+        avg_incomes = {}
+        for bracket in self.age_brackets:
+            # fraction of total
+            fraction = dist_counts[bracket]/total_count if total_count>0 else 0
+            # average income in bracket
+            bracket_avg = 0
+            if dist_counts[bracket] > 0:
+                bracket_avg = sum_incomes[bracket] / dist_counts[bracket]
+
+            distribution[bracket] = fraction
+            avg_incomes[bracket]  = bracket_avg
 
         return {
-            'distribution': {b: c / total_households for b, c in household_counts.items()},
-            'median_incomes': {
-                bracket: zip_data[f'Household Income ({age_bracket_map[bracket]})'].values[0]
-                for bracket in self.age_brackets
-            }
+            'distribution': distribution,
+            'incomes': avg_incomes
         }
 
-    def _calculate_family_distribution(self, zip_data):
+    def _calculate_family_distribution(self, df):
         family_types = {
-            'married': {
+            'Married-couple families': {
                 'count_col': 'Number Families Married-couple families',
                 'income_col': 'Income Families Married-couple families'
             },
-            'female_head': {
+            'Female householder': {
                 'count_col': 'Number Families Female householder, no spouse present',
                 'income_col': 'Income Families Female householder, no spouse present'
             },
-            'male_head': {
+            'Male householder': {
                 'count_col': 'Number Families Male householder, no spouse present',
                 'income_col': 'Income Families Male householder, no spouse present'
             }
         }
+        return self._calc_global_distribution(df, family_types)
 
-        counts = {k: zip_data[v['count_col']].values[0] for k, v in family_types.items()}
-        total = sum(counts.values())
-
-        return {
-            'distribution': {k: v / total for k, v in counts.items()},
-            'incomes': {k: zip_data[v['income_col']].values[0] for k, v in family_types.items()}
-        }
-
-    def _calculate_earner_distribution(self, zip_data):
+    def _calculate_earner_distribution(self, df):
         earner_types = {
-            '0': {'count_col': 'Number No earners', 'income_col': 'Income No earners'},
-            '1': {'count_col': 'Number 1 earner', 'income_col': 'Income 1 earner'},
-            '2': {'count_col': 'Number 2 earners', 'income_col': 'Income 2 earners'},
-            '3+': {'count_col': 'Number 3 or more earners', 'income_col': 'Income 3 or more earners'}
+            '0':  {'count_col': 'Number No earners',          'income_col': 'Income No earners'},
+            '1':  {'count_col': 'Number 1 earner',            'income_col': 'Income 1 earner'},
+            '2':  {'count_col': 'Number 2 earners',           'income_col': 'Income 2 earners'},
+            '3+': {'count_col': 'Number 3 or more earners',   'income_col': 'Income 3 or more earners'}
         }
+        return self._calc_global_distribution(df, earner_types)
 
-        counts = {k: zip_data[v['count_col']].values[0] for k, v in earner_types.items()}
-        total = sum(counts.values())
-
-        return {
-            'distribution': {k: v / total for k, v in counts.items()},
-            'incomes': {k: zip_data[v['income_col']].values[0] for k, v in earner_types.items()}
-        }
-
-    def _calculate_household_size(self, zip_data):
+    def _calculate_household_size(self, df):
         sizes = {
-            '2': {'count_col': 'Number 2-person families', 'income_col': 'Income 2-person families'},
-            '3': {'count_col': 'Number 3-person families', 'income_col': 'Income 3-person families'},
-            '4': {'count_col': 'Number 4-person families', 'income_col': 'Income 4-person families'},
-            '5': {'count_col': 'Number 5-person families', 'income_col': 'Income 5-person families'},
-            '6': {'count_col': 'Number 6-person families', 'income_col': 'Income 6-person families'},
-            '7+': {'count_col': 'Number 7-or-more person families', 'income_col': 'Income 7-or-more person families'}
+            '2':  {'count_col': 'Number 2-person families',    'income_col': 'Income 2-person families'},
+            '3':  {'count_col': 'Number 3-person families',    'income_col': 'Income 3-person families'},
+            '4':  {'count_col': 'Number 4-person families',    'income_col': 'Income 4-person families'},
+            '5':  {'count_col': 'Number 5-person families',    'income_col': 'Income 5-person families'},
+            '6':  {'count_col': 'Number 6-person families',    'income_col': 'Income 6-person families'},
+            '7+': {'count_col': 'Number 7-or-more person families','income_col': 'Income 7-or-more person families'}
         }
+        return self._calc_global_distribution(df, sizes)
 
-        counts = {k: zip_data[v['count_col']].values[0] for k, v in sizes.items()}
-        total = sum(counts.values())
+    def _calc_global_distribution(self, df, bracket_map):
+        """
+        Summation across the entire DataFrame for each bracket -> fraction + average incomes.
+        e.g. bracket_map = {
+           'Married-couple families': {'count_col': ..., 'income_col': ...},
+           ...
+        }
+        """
+        total = 0
+        dist_counts = {}
+        sum_incomes = {}
+
+        for bracket, cols in bracket_map.items():
+            count_col = cols['count_col']
+            inc_col   = cols['income_col']
+
+            c_sum = df[count_col].sum()
+            i_sum = df[inc_col].sum()
+
+            total += c_sum
+
+            dist_counts[bracket] = c_sum
+            sum_incomes[bracket] = i_sum
+
+        distribution = {}
+        bracket_incomes = {}
+        for bracket in bracket_map:
+            fraction = dist_counts[bracket]/total if total > 0 else 0
+            if dist_counts[bracket] > 0:
+                bracket_avg = sum_incomes[bracket] / dist_counts[bracket]
+            else:
+                bracket_avg = 0
+
+            distribution[bracket]   = fraction
+            bracket_incomes[bracket] = bracket_avg
 
         return {
-            'distribution': {k: v / total for k, v in counts.items()},
-            'incomes': {k: zip_data[v['income_col']].values[0] for k, v in sizes.items()}
+            'distribution': distribution,
+            'incomes': bracket_incomes
         }
 
+class ABMGlobalModel:
+    """
+    A simple agent-based approach that uses a single global model of bracket distributions
+    (age, family, earner, size) to generate synthetic customers.
 
+    - Use .set_global_model(...) to supply the bracket distributions from your IncomeDataProcessor.
+    - Call .generate_customers(n) to create n synthetic customers with a timing report.
+    """
 
-class BayesianIncomeModel:
-    def __init__(self,
-                 draws=2500,
-                 tune=1500,
-                 cores=34,
-                 target_accept=0.9):
-        self.draws = draws
-        self.tune = tune
-        self.cores = cores
-        self.target_accept = target_accept
+    def __init__(self):
+        self.model_ = None  # Will store your bracket distributions { 'age_dist':..., ... }
 
-    def fit(self, zip_data,
-            age_data,
-            family_data,
-            earner_data,
-            size_data):
+    def set_global_model(self, global_model):
         """
-        zip_data: Pandas DataFrame subset for a single zipcode
-        age_data, family_data, earner_data, size_data: dicts with
-            'distribution' and 'incomes' or 'median_incomes'
+        global_model: The dictionary from IncomeDataProcessor.model_, e.g.:
+          {
+            'age_dist':    { 'distribution': {...}, 'incomes': {...} },
+            'family_dist': { 'distribution': {...}, 'incomes': {...} },
+            'earner_dist': { 'distribution': {...}, 'incomes': {...} },
+            'size_dist':   { 'distribution': {...}, 'incomes': {...} },
+          }
         """
-        observed_income = zip_data['Household Income'].values.astype(np.float64)
+        self.model_ = global_model
 
-        # Convert dict distributions to arrays
-        tiny = 1e-3
-        age_probs = np.clip(
-            np.array(list(age_data['distribution'].values()), dtype=np.float64),
-            tiny, None
-        )
-        fam_probs = np.clip(
-            np.array(list(family_data['distribution'].values()), dtype=np.float64),
-            tiny, None
-        )
-        earn_probs = np.clip(
-            np.array(list(earner_data['distribution'].values()), dtype=np.float64),
-            tiny, None
-        )
-        size_probs = np.clip(
-            np.array(list(size_data['distribution'].values()), dtype=np.float64),
-            tiny, None
-        )
+    def generate_customers(self, n=100):
+        """
+        Generate 'n' synthetic customers. Return a list of dicts.
 
-        # Convert incomes
-        age_mu_data = np.array(list(age_data['median_incomes'].values()), dtype=np.float64)
-        fam_mu_data = np.array(list(family_data['incomes'].values()), dtype=np.float64)
-        earn_mu_data = np.array(list(earner_data['incomes'].values()), dtype=np.float64)
-        size_mu_data = np.array(list(size_data['incomes'].values()), dtype=np.float64)
+        We measure the total time it takes to sample all customers.
+        """
+        if self.model_ is None:
+            raise ValueError("No global model set. Call set_global_model(...) first.")
 
-        with pm.Model() as model:
-            # Latent scaling for each distribution
-            age_alpha = pm.Exponential('age_alpha', lam=1.0, shape=len(age_probs))
-            fam_alpha = pm.Exponential('fam_alpha', lam=1.0, shape=len(fam_probs))
-            earn_alpha = pm.Exponential('earn_alpha', lam=1.0, shape=len(earn_probs))
-            size_alpha = pm.Exponential('size_alpha', lam=1.0, shape=len(size_probs))
+        start_time = time.time()
 
-            age_weights = pm.Dirichlet('age_weights', a=age_alpha * age_probs)
-            fam_weights = pm.Dirichlet('fam_weights', a=fam_alpha * fam_probs)
-            earn_weights = pm.Dirichlet('earn_weights', a=earn_alpha * earn_probs)
-            size_weights = pm.Dirichlet('size_weights', a=size_alpha * size_probs)
+        results = []
+        for _ in range(n):
+            cust = self._sample_one_customer()
+            results.append(cust)
 
-            # Means for each category
-            # (Here, we allow them to vary, but you could keep them fixed if you want.)
-            age_mu = pm.Normal('age_mu', mu=age_mu_data, sigma=1e4, shape=len(age_mu_data))
-            fam_mu = pm.Normal('fam_mu', mu=fam_mu_data, sigma=1e4, shape=len(fam_mu_data))
-            earn_mu = pm.Normal('earn_mu', mu=earn_mu_data, sigma=1e4, shape=len(earn_mu_data))
-            size_mu = pm.Normal('size_mu', mu=size_mu_data, sigma=1e4, shape=len(size_mu_data))
+        end_time = time.time()
+        elapsed_sec = end_time - start_time
+        print(f"Generated {n} customers in {elapsed_sec:.2f} seconds.")
 
-            # Weighted sum for final income
-            mu_income = (
-                pm.math.dot(age_weights, age_mu) +
-                pm.math.dot(fam_weights, fam_mu) +
-                pm.math.dot(earn_weights, earn_mu) +
-                pm.math.dot(size_weights, size_mu)
-            )
+        return results
 
-            sigma = pm.HalfNormal('sigma', sigma=1e5)
+    # ----------------------------------------------------------------
+    # Internal methods
+    # ----------------------------------------------------------------
 
-            # Example using Normal; you could also do StudentT or LogNormal
-            pm.Normal('income', mu=mu_income, sigma=sigma, observed=observed_income)
+    def _sample_one_customer(self):
+        """
+        Sample ONE customer by:
+          1) picking bracket from each distribution (age, family, earner, size)
+          2) converting bracket to numeric age / earners
+          3) combining bracket-level incomes + noise
+        """
+        # Weighted bracket picks
+        age_bracket = self._weighted_choice(self.model_["age_dist"]["distribution"])
+        family_bracket = self._weighted_choice(self.model_["family_dist"]["distribution"])
+        earner_bracket = self._weighted_choice(self.model_["earner_dist"]["distribution"])
+        size_bracket = self._weighted_choice(self.model_["size_dist"]["distribution"])
 
-            # Sample
-            trace = pm.sample(
-                draws=self.draws,
-                tune=self.tune,
-                cores=self.cores,
-                target_accept=self.target_accept
-            )
+        # Convert brackets to numeric
+        real_age = self._bracket_to_age(age_bracket)
+        real_earners = self._parse_earners(earner_bracket)
+        real_size = self._parse_household_size(size_bracket)
 
-        self.model_ = model
-        self.trace_ = trace
+        # Combine bracket incomes
+        age_inc = self.model_["age_dist"]["incomes"][age_bracket]
+        fam_inc = self.model_["family_dist"]["incomes"][family_bracket]
+        earn_inc = self.model_["earner_dist"]["incomes"][earner_bracket]
+        size_inc = self.model_["size_dist"]["incomes"][size_bracket]
+
+        raw_income = (age_inc + fam_inc + earn_inc + size_inc) / 4.0
+        stdev = 0.2 * raw_income  # 20% stdev
+        final_income = max(5000, np.random.normal(raw_income, stdev))  # clamp min at $5k
+
+        return {
+            "age": real_age,
+            "family_type": family_bracket,
+            "earners": real_earners,
+            "household_size": real_size,
+            "income": round(final_income, 2)
+        }
+
+    def _weighted_choice(self, dist_map):
+        """Given a dict e.g. {'15-24': 0.1, '25-44': 0.3, ...} choose a bracket with those probabilities."""
+        brackets = list(dist_map.keys())
+        weights = np.array(list(dist_map.values()), dtype=float)
+        total = weights.sum()
+        if total == 0:
+            # fallback uniform
+            weights = np.ones(len(weights)) / len(weights)
+        else:
+            weights /= total
+        return np.random.choice(brackets, p=weights)
+
+    def _bracket_to_age(self, bracket):
+        """Convert bracket like '15-24' => random int in [15..24], '65+' => random in [65..90]."""
+        if bracket == '15-24':
+            return random.randint(15, 24)
+        elif bracket == '25-44':
+            return random.randint(25, 44)
+        elif bracket == '45-64':
+            return random.randint(45, 64)
+        elif bracket == '65+':
+            return random.randint(65, 90)
+        else:
+            return random.randint(18, 85)
+
+    def _parse_earners(self, earner_bracket):
+        """If bracket is '3+', pick random from [3..5]; else int(...)"""
+        if earner_bracket == "3+":
+            return random.randint(3, 5)
+        else:
+            return int(earner_bracket)
+
+    def _parse_household_size(self, size_bracket):
+        """If bracket is '7+', pick random from [7..9]; else int(...)"""
+        if size_bracket == '7+':
+            return random.randint(7, 9)
+        else:
+            return int(size_bracket)
+
+class DataPreprocessor(BaseEstimator, TransformerMixin):
+    """Enhanced data processor with full demographic expansion"""
+
+    def __init__(self):
+        self.required_columns = [
+            'Zipcode',
+            # Age distribution columns
+            'Number Household Income (15 to 24 years)',
+            'Household Income (15 to 24 years)',
+            'Number Household Income (25 to 44 years)',
+            'Household Income (25 to 44 years)',
+            'Number Household Income (45 to 64 years)',
+            'Household Income (45 to 64 years)',
+            'Number Household Income (65 years and over)',
+            'Household Income (65 years and over)',
+            # Family structure columns
+            'Number Families Married-couple families',
+            'Income Families Married-couple families',
+            'Number Families Female householder, no spouse present',
+            'Income Families Female householder, no spouse present',
+            'Number Families Male householder, no spouse present',
+            'Income Families Male householder, no spouse present',
+            # Earner columns
+            'Number No earners', 'Income No earners',
+            'Number 1 earner', 'Income 1 earner',
+            'Number 2 earners', 'Income 2 earners',
+            'Number 3 or more earners', 'Income 3 or more earners',
+            # Household size columns
+            'Number 2-person families', 'Income 2-person families',
+            'Number 3-person families', 'Income 3-person families',
+            'Number 4-person families', 'Income 4-person families',
+            'Number 5-person families', 'Income 5-person families',
+            'Number 6-person families', 'Income 6-person families',
+            'Number 7-or-more person families', 'Income 7-or-more person families'
+        ]
+
+    def fit(self, X, y=None):
+        self._validate_columns(X)
         return self
 
-    def save_trace(self, path="my_trace.nc"):
-        """Save the trace to a NetCDF file with ArviZ."""
-        import arviz as az
-        az.to_netcdf(self.trace_, path)
-        print(f"Trace saved to {path}")
+    def transform(self, X):
+        """Convert aggregated data to household-level format with full demographics"""
+        households = []
 
-    def load_trace(self, path="my_trace.nc"):
-        """Load the trace from disk."""
-        import arviz as az
-        self.trace_ = az.from_netcdf(path)
-        print(f"Trace loaded from {path}")
-        # Note: This returns an InferenceData object in PyMC>=4
+        for _, row in X.iterrows():
+            households += self._process_zipcode(row)
 
-    def get_trace(self):
-        return self.trace_
+        return pd.DataFrame(households)
 
+    def _process_zipcode(self, row):
+        zip_households = []
+        zipcode = row['Zipcode']
 
-class IndividualIncomePredictor:
-    """Predict individual income using Bayesian posterior weights from zipcode-level models"""
+        # Age distribution
+        for age_bracket in ['15-24', '25-44', '45-64', '65+']:
+            count = row[f'Number Household Income ({self._age_suffix(age_bracket)})']
+            income = row[f'Household Income ({self._age_suffix(age_bracket)})']
 
-    def __init__(self, zipcode_stats):
-        self.zipcode_stats = zipcode_stats
+            for _ in range(int(count)):
+                zip_households.append({
+                    'zipcode': zipcode,
+                    'age_bracket': age_bracket,
+                    **self._sample_demographics(row),
+                    'income': self._calculate_income(income)
+                })
 
-    def predict_individual(self, num_samples=1):
-        """Generate synthetic individuals with Bayesian-weighted incomes"""
-        individuals = []
+        return zip_households
 
-        for zipcode, stats in self.zipcode_stats.items():
-            for _ in range(num_samples):
-                demographics = self._sample_demographics(
-                    zipcode,
-                    stats['age_dist']['distribution'],
-                    stats['family_dist']['distribution'],
-                    stats['earner_dist']['distribution'],
-                    stats['household_size_dist']['distribution']
-                )
+    def _age_suffix(self, bracket):
+        # Convert "15-24" to "15 to 24 years", "65+" to "65 years and over"
+        if '-' in bracket:
+            return bracket.replace('-', ' to ') + ' years'
+        elif '+' in bracket:
+            return bracket.replace('+', ' years and over')
+        else:
+            raise ValueError(f"Unexpected age bracket format: {bracket}")
 
-                income = self._calculate_bayesian_income(demographics)
-                individuals.append({**demographics, 'income': income})
-
-        return pd.DataFrame(individuals)
-
-    def _sample_demographics(self, zipcode, age_dist, family_dist, earner_dist, size_dist):
-        """Sample demographics with proper type handling"""
+    def _sample_demographics(self, row):
+        """Sample family structure, household size, and earners"""
         return {
-            'zipcode': zipcode,
-            'age_group': self._safe_choice(age_dist),
-            'family_type': self._safe_choice(family_dist),
-            'earners': self._sample_earners(earner_dist),
-            'household_size': self._parse_household_size(
-                self._safe_choice(size_dist)
-            )
+            'marital_status': self._sample_marital_status(row),
+            'household_size': self._sample_household_size(row),
+            'gender': self._sample_gender(row),
+            'earners': self._sample_earners(row)
         }
 
-    def _calculate_bayesian_income(self, demographics):
-        """Calculate income using posterior weights and demographic medians"""
-        zipcode = demographics['zipcode']
-        stats = self.zipcode_stats[zipcode]
-        model_data = stats['income_model']
-
-        # Get posterior sample weights
-        weights = self._get_posterior_weights(zipcode)
-
-        # Get indices for each demographic category
-        age_idx = self._get_category_index(stats['age_dist'], 'age_group', demographics)
-        family_idx = self._get_category_index(stats['family_dist'], 'family_type', demographics)
-        earner_idx = self._get_earner_index(stats['earner_dist'], demographics)
-        size_idx = self._get_size_index(stats['household_size_dist'], demographics)
-
-        # Calculate weighted components
-        return (
-                weights['age'][age_idx] * model_data['age_mu'][age_idx] +
-                weights['family'][family_idx] * model_data['family_mu'][family_idx] +
-                weights['earner'][earner_idx] * model_data['earner_mu'][earner_idx] +
-                weights['size'][size_idx] * model_data['size_mu'][size_idx]
+    def _sample_marital_status(self, row):
+        family_counts = {
+            'married': row['Number Families Married-couple families'],
+            'single': (row['Number Families Female householder, no spouse present']
+                       + row['Number Families Male householder, no spouse present'])
+        }
+        total = sum(family_counts.values())
+        if total == 0:
+            return np.random.choice(['married', 'single'])  # fallback
+        return np.random.choice(
+            list(family_counts.keys()),
+            p=np.array(list(family_counts.values())) / total
         )
 
-    def _get_posterior_weights(self, zipcode):
-        """Sample weights from Bayesian posterior"""
-        trace = self.zipcode_stats[zipcode]['income_model']['trace']
-        idx = np.random.randint(len(trace))
-        return {
-            'age': trace['age_weights'][idx],
-            'family': trace['family_weights'][idx],
-            'earner': trace['earner_weights'][idx],
-            'size': trace['size_weights'][idx]
+    def _sample_household_size(self, row):
+        # Map size codes to actual column suffixes
+        size_map = {
+            '2': '2-person',
+            '3': '3-person',
+            '4': '4-person',
+            '5': '5-person',
+            '6': '6-person',
+            '7+': '7-or-more person'
         }
 
-    def _get_category_index(self, dist_data, key, demographics):
-        """Get index position for a demographic category"""
-        categories = list(dist_data['distribution'].keys())
-        return categories.index(demographics[key])
+        sizes = ['2', '3', '4', '5', '6', '7+']
 
-    def _get_earner_index(self, dist_data, demographics):
-        """Handle 3+ earner conversion"""
-        earners = list(dist_data['distribution'].keys())
-        earner_key = '3+' if demographics['earners'] >= 3 else str(demographics['earners'])
-        return earners.index(earner_key)
+        # Use the map to construct correct column names
+        counts = [row[f'Number {size_map[size]} families'] for size in sizes]
 
-    def _get_size_index(self, dist_data, demographics):
-        """Handle household size conversion"""
-        sizes = list(dist_data['distribution'].keys())
-        size = demographics['household_size']
-        size_key = '7+' if (isinstance(size, int) and size >= 7) else str(size)
-        return sizes.index(size_key)
+        total = sum(counts)
+        if total == 0:
+            return 2  # fallback
 
-    def _safe_choice(self, dist):
-        """Numerically stable category sampling"""
-        probs = np.array(list(dist.values()), dtype=np.float64)
-        probs += 1e-8  # Add tiny epsilon to avoid zeros
-        probs /= probs.sum()
-        return np.random.choice(list(dist.keys()), p=probs)
+        chosen = np.random.choice(sizes, p=np.array(counts) / total)
+        return int(chosen) if chosen != '7+' else np.random.randint(7, 10)
 
-    def _sample_earners(self, dist):
-        """Sample earners with proper 3+ handling"""
-        key = self._safe_choice(dist)
-        return np.random.randint(3, 6) if key == '3+' else int(key)
+    def _sample_gender(self, row):
+        female = row['Number Families Female householder, no spouse present']
+        male = row['Number Families Male householder, no spouse present']
+        total = female + male
+        if total == 0:
+            return np.random.choice(['female', 'male'])  # fallback
+        return np.random.choice(
+            ['female', 'male'],
+            p=[female / total, male / total]
+        )
 
-    def _parse_household_size(self, size_str):
-        """Convert size strings to numerical values"""
-        if size_str == '7+':
-            return np.random.choice([7, 8, 9], p=[0.7, 0.2, 0.1])
-        return int(size_str)
+    def _sample_earners(self, row):
+        earners = {
+            '0': row['Number No earners'],
+            '1': row['Number 1 earner'],
+            '2': row['Number 2 earners'],
+            '3+': row['Number 3 or more earners']
+        }
+        total = sum(earners.values())
+        if total == 0:
+            return '0'  # fallback
+        return np.random.choice(
+            list(earners.keys()),
+            p=np.array(list(earners.values())) / total
+        )
 
+    def _calculate_income(self, base_income):
+        return max(5000, base_income * np.random.normal(1, 0.2))
+
+    def _validate_columns(self, X):
+        missing_cols = set(self.required_columns) - set(X.columns)
+        if missing_cols:
+            raise ValueError(f"Missing required columns: {missing_cols}")
+
+
+class AdvancedIncomeModel:
+    """Enhanced model using SDV 1.19.0 Single-Table CTGAN approach."""
+
+    def __init__(self, epochs=100):
+        self.epochs = epochs
+        self.preprocessor = DataPreprocessor()
+        self.metadata = None
+        self.synthesizer = None
+
+    def fit(self, X):
+        """1. Preprocess data, 2. Build Metadata, 3. Train CTGANSynthesizer."""
+        # 1. Transform data to household-level format
+        household_data = self.preprocessor.transform(X)
+
+        # 2. Create Metadata for single-table modeling
+        self.metadata = SingleTableMetadata()
+        self.metadata.detect_from_dataframe(household_data)
+
+        # Optionally, override column sdtypes:
+        self.metadata.update_column('zipcode', sdtype='categorical')
+        self.metadata.update_column('age_bracket', sdtype='categorical')
+        self.metadata.update_column('marital_status', sdtype='categorical')
+        self.metadata.update_column('gender', sdtype='categorical')
+        self.metadata.update_column('earners', sdtype='categorical')
+        self.metadata.update_column('income', sdtype='numerical')
+        self.metadata.update_column('household_size', sdtype='numerical')
+
+        # 3. Create and train the CTGANSynthesizer
+        self.synthesizer = CTGANSynthesizer(
+            metadata=self.metadata,
+            enforce_rounding=False,
+            epochs=self.epochs,
+            verbose=True
+        )
+        self.synthesizer.fit(household_data)
+        return self
+
+    def generate(self, num_samples=10):
+        """Generate synthetic data from the trained synthesizer."""
+        synthetic = self.synthesizer.sample(num_rows=num_samples)
+
+        # If you stored 'age_bracket' or 'earners' as categorical, you might want post-processing:
+        # Example: Create a final 'age' column from 'age_bracket'
+        if 'age_bracket' in synthetic.columns:
+            def bracket_to_age(bracket):
+                if '-' in bracket:
+                    low, high = bracket.split('-')
+                    return np.random.randint(int(low), int(high) + 1)
+                else:
+                    # e.g. '65+' bracket
+                    return np.random.randint(65, 85)
+            synthetic['age'] = synthetic['age_bracket'].apply(bracket_to_age)
+
+        # Convert '3+' earners to random 3-5
+        if 'earners' in synthetic.columns:
+            def parse_earners(e):
+                if e == '3+':
+                    return np.random.randint(3, 6)
+                return int(e)
+            synthetic['earners'] = synthetic['earners'].apply(parse_earners)
+
+        # Return final columns
+        return synthetic[['zipcode', 'age', 'marital_status',
+                          'household_size', 'income', 'gender', 'earners']]
+
+    def save(self, path):
+        """Pickle this model class (including the synthesizer)."""
+        joblib.dump(self, path)
+
+    @classmethod
+    def load(cls, path):
+        """Load the model from a pickle file."""
+        return joblib.load(path)
+
+def clean_currency_column(df, column_name):
+    df[column_name] = df[column_name].replace(r'[\$,]', '', regex=True).astype(float)
+    return df
