@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from "react";
-import { Box, Typography, AppBar, Toolbar, Button, Grid, Card, CardContent, TextField } from "@mui/material";
+import { Box, AppBar, Toolbar, Typography, Button, Grid, Card, CardContent, TextField, List, ListItem, Divider } from "@mui/material";
 import { Link } from "react-router-dom";
 import { useSpring, animated } from "@react-spring/web";
 import { Fade } from "react-awesome-reveal";
-import axios from "axios"; // Import axios for API calls
+import axios from "axios";
 
 const BudgetOptimization = () => {
   const heroAnimation = useSpring({
@@ -18,34 +18,99 @@ const BudgetOptimization = () => {
     children: "",
     maritalStatus: "",
   });
+
+  const [categorySpending, setCategorySpending] = useState({});
+  const [suggestions, setSuggestions] = useState("");
   const [budget, setBudget] = useState(0);
-  const [error, setError] = useState("");
+  const [chatbotResponse, setChatbotResponse] = useState("");
+  const [isChatting, setIsChatting] = useState(false);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    const savedTransactions = localStorage.getItem("transactions");
-    if (savedTransactions) {
-      const transactions = JSON.parse(savedTransactions);
-      const totalBudget = transactions.reduce((sum, transaction) => sum + transaction.Amount, 0);
+    const savedSpending = localStorage.getItem("categorizedSpending");
+    if (savedSpending) {
+      const parsedSpending = JSON.parse(savedSpending);
+      setCategorySpending(parsedSpending);
+
+      const totalBudget = Object.values(parsedSpending).reduce((sum, amount) => sum + amount, 0);
       setBudget(totalBudget);
     }
   }, []);
 
+  const optimizeBudget = async () => {
+    console.log("Optimizing budget..."); // Debugging log
+    if (!categorySpending || Object.keys(categorySpending).length === 0) {
+      setSuggestions("No spending data available. Please categorize transactions first.");
+      return;
+    }
   
+    let advice = "\n";
+    let flaggedCategories = [];
+    Object.entries(categorySpending).forEach(([category, amount]) => {
+      if (amount > 300) {
+        advice += `⚠️ Consider reducing expenses in ${category} (${amount.toFixed(2)})\n`;
+        flaggedCategories.push(category);
+      } else {
+        advice += `✅ Spending in ${category} (${amount.toFixed(2)}) is under control.\n`;
+      }
+    });
 
-  const [chatbotResponse, setChatbotResponse] = useState("");
-  const [isChatting, setIsChatting] = useState(false);
+    setSuggestions(advice);
+    await getChatbotResponse(flaggedCategories);
+  };
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setUserDetails({ ...userDetails, [name]: value });
   };
 
-  const handleChatSubmit = async () => {
+  const validateInputs = () => {
+    if (!/^\d{1,2}$/.test(userDetails.age) || parseInt(userDetails.age) < 18) {
+      setError("Age must be a number, between 18 and 99.");
+      return false;
+    }
+  
+    if (!/^\d+(\.\d{1,2})?$/.test(userDetails.income)) {
+      setError("Income must be a valid number.");
+      return false;
+    }
+  
+    if (!/^\d+$/.test(userDetails.children) || parseInt(userDetails.children) < 0) {
+      setError("Children must be a positive integer.");
+      return false;
+    }
+
+    const maritalStatus = userDetails.maritalStatus.trim().toLowerCase(); 
+    if (!maritalStatus || !["single", "married", "divorced", "widowed"].includes(maritalStatus)) {
+      setError("Marital status must be one of the following: single, married, divorced, widowed.");
+      return false;
+    }
+  
+    setError(null);
+    return true;
+  };
+
+  const getChatbotResponse = async (flaggedCategories) => {
+    if (!validateInputs()) return; 
     setIsChatting(true);
+    setError(null);
+
+    let flaggedCategoriesText = flaggedCategories.length > 0
+      ? `The user is spending too much in these categories: ${flaggedCategories.join(", ")}. Provide recommendations on reducing expenses in these areas.`
+      : "The user's spending is generally balanced.";
 
     const requestData = {
       model: "llama3-8b-8192",
-      messages: [{ role: "user", content: `User details: Age: ${userDetails.age}, Income: ${userDetails.income}, Children: ${userDetails.children}, Marital Status: ${userDetails.maritalStatus}. Provide budgeting advice.` }],
+      messages: [
+        {
+          role: "user",
+          content: `User details: Age: ${userDetails.age}, Income: ${userDetails.income}, Children: ${userDetails.children}, Marital Status: ${userDetails.maritalStatus}. 
+                    Monthly Spending Breakdown: ${JSON.stringify(categorySpending)}.
+                    ${flaggedCategoriesText}
+                    Given this data, suggest how the user can optimize their budget.
+                    If the age and the children does not make sense, then highlight that part everytime.`,
+        },
+      ],
       temperature: 0.7,
     };
 
@@ -68,7 +133,7 @@ const BudgetOptimization = () => {
       }
     } catch (error) {
       console.error("Error interacting with Groq Llama model:", error);
-      setChatbotResponse("Sorry, there was an error. Please try again.");
+      setError("Sorry, there was an error. Please try again.");
     } finally {
       setIsChatting(false);
     }
@@ -114,124 +179,90 @@ const BudgetOptimization = () => {
                   <Typography variant="h5" sx={{ mb: 3 }}>
                     Answer these questions to optimize your budget:
                   </Typography>
+                  {[
+                  { label: "Age", key: "age" },
+                  { label: "Income", key: "income" },
+                  { label: "Children", key: "children" },
+                  { label: "Marital Status", key: "maritalStatus" }, 
+                ].map((field, index) => (
                   <TextField
-                    label="Age"
+                    key={index}
+                    label={field.label}
                     variant="outlined"
                     fullWidth
                     margin="normal"
-                    name="age"
-                    value={userDetails.age}
+                    name={field.key} 
+                    value={userDetails[field.key]} 
                     onChange={handleInputChange}
                     sx={{
-                      backgroundColor: "#333", 
-                      color: "white", 
-                      '& .MuiInputBase-root': {
-                        color: 'white',
-                      },
+                      backgroundColor: "#333",
+                      color: "white",
+                      '& .MuiInputBase-root': { color: 'white' },
                     }}
                   />
-                  <TextField
-                    label="Income Range"
-                    variant="outlined"
-                    fullWidth
-                    margin="normal"
-                    name="income"
-                    value={userDetails.income}
-                    onChange={handleInputChange}
-                    sx={{
-                      backgroundColor: "#333", 
-                      color: "white", 
-                      '& .MuiInputBase-root': {
-                        color: 'white',
-                      },
-                    }}
-                  />
-                  <TextField
-                    label="Number of Children"
-                    variant="outlined"
-                    fullWidth
-                    margin="normal"
-                    name="children"
-                    value={userDetails.children}
-                    onChange={handleInputChange}
-                    sx={{
-                      backgroundColor: "#333", 
-                      color: "white", 
-                      '& .MuiInputBase-root': {
-                        color: 'white',
-                      },
-                    }}
-                  />
-                  <TextField
-                    label="Marital Status"
-                    variant="outlined"
-                    fullWidth
-                    margin="normal"
-                    name="maritalStatus"
-                    value={userDetails.maritalStatus}
-                    onChange={handleInputChange}
-                    sx={{
-                      backgroundColor: "#333", 
-                      color: "white", 
-                      '& .MuiInputBase-root': {
-                        color: 'white',
-                      },
-                    }}
-                  />
-                  <Button
-                    variant="contained"
-                    color="primary"
-                    sx={{ mt: 2 }}
-                    onClick={handleChatSubmit}
-                    disabled={isChatting}
-                  >
-                    {isChatting ? "Processing..." : "Submit"}
+                ))}
+                  <Button variant="contained" color="primary" sx={{ mt: 2 }} onClick={optimizeBudget} disabled={isChatting}>
+                    {isChatting ? "Processing..." : "Optimize Budget"}
                   </Button>
 
-                    {/* Show error if any */}
-                    {error && (
-                    <Box sx={{ mt: 3 }}>
-                        <Typography variant="h6" color="error">
-                        Error: {error}
-                        </Typography>
+                  {error && <Typography color="error">{error}</Typography>}
+                  {chatbotResponse && (
+                    <Box sx={{ mt: 3, textAlign: "left" }}>
+                      <Typography variant="h5" sx={{ mb: 1, fontWeight: "bold" }}>
+                        💡 Chatbot Suggestions:
+                      </Typography>
+                      <Divider sx={{ mb: 2, backgroundColor: "white" }} />
+
+                      <List
+                        sx={{
+                          padding: 5,
+                          borderRadius: "10px",
+                          background: "linear-gradient(135deg,rgb(12, 18, 29), #1e2a47, #2b3c5b,rgb(75, 96, 128))",
+                          backgroundSize: "200% 200%",
+                          animation: "gradientFlow 3s ease infinite",
+                          position: "relative", 
+                        }}
+                      >
+                        
+                        {chatbotResponse.split("\n").map((line, index) => (
+                          <ListItem key={index} sx={{ display: "flex", alignItems: "center" }}>
+                            {line.includes("✅") && <Typography sx={{ color: "#4CAF50", fontWeight: "bold", mr: 1 }}>✔️</Typography>}
+                            {line.includes("⚠️") && <Typography sx={{ color: "#FF9800", fontWeight: "bold", mr: 1 }}>⚠️</Typography>}
+                            {line.includes("💡") && <Typography sx={{ color: "#03A9F4", fontWeight: "bold", mr: 1 }}>💡</Typography>}
+                            <Typography>{line}</Typography>
+                          </ListItem>
+                        ))}
+                        {suggestions && (
+                          <Box sx={{ mt: 3 }}>
+                            <Typography variant="h6" color="White">
+                            Overall Budget Review:
+                            </Typography><br></br>
+                            <Box sx={{ paddingLeft: "20px" }}>
+                              {Array.isArray(suggestions)
+                                ? suggestions
+                                    .filter((suggestion) => suggestion.trim() !== "")
+                                    .map((suggestion, index) => (
+                                      <Typography key={index} sx={{ display: "block", mb: 1 }}>
+                                        {suggestion.replace(/\b(\d+(\.\d{1,2})?)\b/g, '$$$1')} {}
+                                      </Typography>
+                                    ))
+                                : suggestions
+                                    .split("\n") 
+                                    .filter((suggestion) => suggestion.trim() !== "") 
+                                    .map((suggestion, index) => (
+                                      <Typography key={index} sx={{ display: "block", mb: 1 }}>
+                                        {suggestion.replace(/\b(\d+(\.\d{1,2})?)\b/g, '$$$1')} {}
+                                      </Typography>
+                                    ))}
+                            </Box>
+                          </Box>
+                        )}
+
+                      </List>
                     </Box>
-                    )}
-                    
-                    {chatbotResponse && (
-  <Box sx={{ mt: 3 }}>
-    <Typography variant="h6" color="primary">
-      Chatbot Suggestion:
-    </Typography>
-    <ul style={{ textAlign: "left", marginLeft: "20px" }}>
-      {chatbotResponse.split("\n").map((point, index, arr) => {
-        const trimmedPoint = point.trim();
-
-        if (!trimmedPoint) return null;
-
-        const isSubBullet = trimmedPoint.startsWith("-") || trimmedPoint.startsWith("•");
-
-        return isSubBullet ? (
-          <ul key={index} style={{ marginLeft: "20px" }}>
-            <li>
-              <Typography>{trimmedPoint.substring(1).trim()}</Typography>
-            </li>
-          </ul>
-        ) : (
-          <li key={index}>
-            <Typography>{trimmedPoint}</Typography>
-          </li>
-        );
-      })}
-    </ul>
-  </Box>
-)}
-
-
-
+                  )}
+                  <Typography variant="h5" sx={{ mt: 3 }}>💰 Your Current Spending: ${budget.toFixed(2)}</Typography>
                 </CardContent>
-                <Typography variant="h5" sx={{ mb: 3 }}>
-            Your Current Spending: ${budget.toFixed(2)}
-        </Typography>
               </Card>
             </Grid>
           </Grid>
@@ -240,7 +271,6 @@ const BudgetOptimization = () => {
       <br></br>
       <br></br>
       <br></br>
-
       <Box sx={{ textAlign: "center", mt: 4 }}>
         <Button component={Link} to="/investment" variant="contained" color="primary" sx={{ padding: "10px 20px" }}>
           Go to Financial Assistant

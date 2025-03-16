@@ -84,6 +84,16 @@ const Dashboard = () => {
   const saveTransactions = (formattedTransactions) => {
     setTransactions(formattedTransactions);
     localStorage.setItem("transactions", JSON.stringify(formattedTransactions));
+    
+    const categoryTotals = formattedTransactions.reduce((acc, transaction) => {
+      if (!acc[transaction.Category]) {
+        acc[transaction.Category] = 0;
+      }
+      acc[transaction.Category] += transaction.Amount;
+      return acc;
+    }, {});
+  
+    localStorage.setItem("categorizedSpending", JSON.stringify(categoryTotals));
   };
 
   const handleUpload = async () => {
@@ -165,7 +175,7 @@ const Dashboard = () => {
               News
             </Button>
             <Button component={Link} to="/Synthesizer" variant="text" sx={{ color: "white" }}>
-              synthesizer
+              Synthesizer
             </Button>
           </Box>
         </Toolbar>

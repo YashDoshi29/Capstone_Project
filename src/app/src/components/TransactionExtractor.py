@@ -11,7 +11,7 @@ import json
 import io
 import csv
 from fuzzywuzzy import process  
-from pydantic import BaseModel, field_validator 
+from pydantic import BaseModel, field_validator
 import spacy
 from typing import List
 
@@ -20,10 +20,9 @@ app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
 CORS(app)
 nlp = spacy.load("en_core_web_sm")
 
-GROQ_API_KEY = "GROQ_API_KEY"  
+GROQ_API_KEY = "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"  
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 MODEL_NAME = "llama3-8b-8192"
-
 
 class GroqAPI:
     def __init__(self, api_key, model_name):
@@ -67,34 +66,46 @@ def extract_transactions(text):
     transactions = []
 
     transaction_pattern = re.compile(
-        r"(\d{2}/\d{2})\s+(\d{2}/\d{2})\s+([A-Za-z0-9\s\*\.\#\-\/]+)\s+\d+\s+\d+\s+(-?[\d,]+\.\d{2})"
+        r"(\d{2}/\d{2})\s+(\d{2}/\d{2})\s+([A-Za-z0-9\s\*\.\#\-\/]+)\s+\d+\s+\d+\s+(-?[\d,]+\.\d{2})(\s+[A-Za-z]*)?"
     )
 
     for line in lines:
         match = transaction_pattern.search(line)
         if match:
-            posting_date, transaction_date, description, amount = match.groups()
-            amount = float(amount.replace(",", ""))
+            posting_date, transaction_date, description, amount, state = match.groups()
+            
+            if amount is not None:
+                amount = float(amount.replace(",", ""))
+            else:
+                continue  
+           
+            state = state.strip() if state else "N/A"
 
             transactions.append({
                 "Posting Date": posting_date.strip(),
                 "Transaction Date": transaction_date.strip(),
                 "Description": description.strip(),
+                "State": state,
                 "Amount": amount
             })
 
     return pd.DataFrame(transactions)
+
 
 class CategoryMapper:
     @staticmethod
     def map_categories(df, llm_api):
         unique_stores = df["Store"].unique()
         query = (
-            "You are an AI assistant specializing in financial transaction classification. "
-            "Given the following store names, provide an appropriate spending category for each. "
-            "Categories include: Food and Drinks, Shopping, Travel, Services, Health and Wellness, Entertainment, etc.\n"
-            "Provide your response in the format: 'Store - Category'.\n\n"
-        )
+        "You are an AI assistant specializing in financial transaction classification. "
+        "Given the following store names, classify each one into a predefined category. "
+        "The available categories include common ones like: Food, Shopping, Travel, Services, Health, Entertainment, and others. "
+        "Each category should be simple and relevant, like 'Food', 'Shopping', 'Online Shopping', 'Health', etc. "
+        "If you are unsure about the category, choose the most relevant one based on common usage. "
+        "Feel free to use other known categories that make sense for the store, such as 'Utilities', 'Education', 'Transportation', etc. "
+        "Avoid using complex or ambiguous categories like 'Unknown' or 'GWU'. "
+        "Provide your response in the format: 'Items - Category'."
+)
         query += "\n".join(unique_stores)
 
         try:
@@ -152,7 +163,7 @@ class CreditCardStatementProcessor:
             print("No transactions found.")
             return
 
-        transactions_df = StoreNameExtractor.extract_store_names(transactions_df)  # Assuming this is defined elsewhere
+        transactions_df = StoreNameExtractor.extract_store_names(transactions_df) 
         transactions_df.to_csv("transactions_with_categories.csv", index=False)
 
         df = pd.read_csv("transactions_with_categories.csv")
@@ -164,6 +175,7 @@ class CreditCardStatementProcessor:
         df_merged.to_csv("categorized_transactions.csv", index=False)
 
     def process_csv(self):
+      
         df = pd.read_csv(io.BytesIO(self.file_bytes))
         categories_df = CategoryMapper.map_categories(df, self.llm_api)
 
