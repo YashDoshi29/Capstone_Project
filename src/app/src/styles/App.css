@@ -1,4 +1,16 @@
 /* Reset and global styles */
+/* Optimization */
+@keyframes gradientFlow {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+@keyframes gradientScroll {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
+}
+
 body {
   margin: 0;
   padding: 0;
