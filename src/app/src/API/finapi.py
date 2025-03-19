@@ -983,7 +983,7 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 app = Flask(__name__)
 
 # Enable CORS for all routes
-CORS(app, resources={"/api/*": {"origins": "http://localhost:3000"}})  # Allow all domains for now
+CORS(app, resources={"/api/*": {"origins": "*"}})  # Allow all domains for now
 
 logging.basicConfig(level=logging.DEBUG)
 
