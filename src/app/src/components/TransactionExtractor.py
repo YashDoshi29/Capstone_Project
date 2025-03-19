@@ -15,6 +15,7 @@ from pydantic import BaseModel, field_validator
 import spacy
 from typing import List
 
+
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
 CORS(app)
@@ -100,11 +101,11 @@ class CategoryMapper:
         "You are an AI assistant specializing in financial transaction classification. "
         "Given the following store names, classify each one into a predefined category. "
         "The available categories include common ones like: Food, Shopping, Travel, Services, Health, Entertainment, and others. "
-        "Each category should be simple and relevant, like 'Food', 'Shopping', 'Online Shopping', 'Health', etc. "
+        "Each category should be simple and relevant, like 'Food', 'Shopping', 'Health', etc. "
         "If you are unsure about the category, choose the most relevant one based on common usage. "
         "Feel free to use other known categories that make sense for the store, such as 'Utilities', 'Education', 'Transportation', etc. "
         "Avoid using complex or ambiguous categories like 'Unknown' or 'GWU'. "
-        "Provide your response in the format: 'Items - Category'."
+        "Provide your response in the format: 'Store - Category'."
 )
         query += "\n".join(unique_stores)
 

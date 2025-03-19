@@ -85,6 +85,7 @@ const Dashboard = () => {
     setTransactions(formattedTransactions);
     localStorage.setItem("transactions", JSON.stringify(formattedTransactions));
     
+    // Aggregate spending by category
     const categoryTotals = formattedTransactions.reduce((acc, transaction) => {
       if (!acc[transaction.Category]) {
         acc[transaction.Category] = 0;
@@ -173,9 +174,6 @@ const Dashboard = () => {
             </Button>
             <Button component={Link} to="/FinancialNews" variant="text" sx={{ color: "white" }}>
               News
-            </Button>
-            <Button component={Link} to="/Synthesizer" variant="text" sx={{ color: "white" }}>
-              Synthesizer
             </Button>
           </Box>
         </Toolbar>

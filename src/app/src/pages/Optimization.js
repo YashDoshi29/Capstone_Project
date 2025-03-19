@@ -108,7 +108,7 @@ const BudgetOptimization = () => {
                     Monthly Spending Breakdown: ${JSON.stringify(categorySpending)}.
                     ${flaggedCategoriesText}
                     Given this data, suggest how the user can optimize their budget.
-                    If the age and the children does not make sense, then highlight that part everytime.`,
+                    If the age and the children does not make sense, then highlight that part.`,
         },
       ],
       temperature: 0.7,
