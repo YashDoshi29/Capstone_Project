@@ -5,8 +5,9 @@ import time
 import random
 from sdv.single_table import CTGANSynthesizer
 from sdv.metadata.single_table import SingleTableMetadata
+from sdv.errors import SamplingError
 import joblib
-
+import torch
 
 class CSVColumnCleaner:
     def __init__(self, common_phrases, keywords):
@@ -685,8 +686,7 @@ class AdvancedIncomeModel:
         """Generate synthetic data from the trained synthesizer."""
         synthetic = self.synthesizer.sample(num_rows=num_samples)
 
-        # If you stored 'age_bracket' or 'earners' as categorical, you might want post-processing:
-        # Example: Create a final 'age' column from 'age_bracket'
+
         if 'age_bracket' in synthetic.columns:
             def bracket_to_age(bracket):
                 if '-' in bracket:
@@ -710,13 +710,46 @@ class AdvancedIncomeModel:
                           'household_size', 'income', 'gender', 'earners']]
 
     def save(self, path):
-        """Pickle this model class (including the synthesizer)."""
-        joblib.dump(self, path)
+        """Save the entire synthesizer object using SDV's save method."""
+        # SDV's CTGANSynthesizer has its own save/load methods
+        self.synthesizer.save(path)
 
     @classmethod
     def load(cls, path):
-        """Load the model from a pickle file."""
-        return joblib.load(path)
+        """Load the synthesizer and metadata."""
+        # Initialize a new model instance
+        model = cls()
+
+        # Load the synthesizer using SDV's method
+        model.synthesizer = CTGANSynthesizer.load(path)
+
+        # Extract metadata from the synthesizer
+        model.metadata = model.synthesizer.metadata
+
+        return model
+
+    @classmethod
+    def _force_cpu_loading(cls, path):
+        """Handle GPU-trained model loading on CPU."""
+        # Load the synthesizer state manually
+        device = torch.device('cpu')
+        synthesizer = CTGANSynthesizer(metadata=None)  # Temporary empty initializer
+        synthesizer.__dict__.update(torch.load(path, map_location=device))
+        synthesizer._model.to(device)
+        synthesizer._device = 'cpu'
+        return synthesizer
+
+    def _move_to_cpu(self):
+        """Move synthesizer components to CPU."""
+        self.synthesizer._model.to('cpu')
+        self.synthesizer._device = 'cpu'
+        # Update other CUDA-dependent attributes if they exist
+        if hasattr(self.synthesizer._model, 'optimizer'):
+            for state in self.synthesizer._model.optimizer.state.values():
+                for k, v in state.items():
+                    if isinstance(v, torch.Tensor):
+                        state[k] = v.cpu()
+
 
 def clean_currency_column(df, column_name):
     df[column_name] = df[column_name].replace(r'[\$,]', '', regex=True).astype(float)
