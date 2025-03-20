@@ -14,7 +14,7 @@ from fuzzywuzzy import process
 from pydantic import BaseModel, field_validator
 import spacy
 from typing import List
-
+import pdfplumber
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
@@ -57,55 +57,107 @@ class GroqAPI:
 
 llm_api = GroqAPI(GROQ_API_KEY, MODEL_NAME)
 
-def extract_text_from_pdf(pdf_bytes):
-    images = convert_from_bytes(pdf_bytes)
-    text = "\n".join([pytesseract.image_to_string(img, config="--psm 6") for img in images])
-    return text
+def extract_text_from_pdf(pdf_bytes, output_filename="extracted_text.txt"):
+    """Extract text from PDF using pdfplumber for text-based PDFs or pytesseract for scanned PDFs.
+    Saves the extracted text to a text file."""
+    try:
+        with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+            all_text = ""
+            for page in pdf.pages:
+                # Extract the text
+                all_text += page.extract_text()
+
+            if all_text.strip():  # Check if text extraction from pdfplumber was successful
+                print("Text extracted using pdfplumber.")
+            else:
+                # If pdfplumber extraction is empty, use pytesseract for OCR
+                print("No text found using pdfplumber. Falling back to OCR...")
+                images = convert_from_bytes(pdf_bytes)
+                ocr_text = "\n".join([pytesseract.image_to_string(img, config="--psm 6") for img in images])
+                all_text = ocr_text
+
+            # Write the extracted text to a new text file
+            with open(output_filename, "w", encoding="utf-8") as output_file:
+                output_file.write(all_text)
+
+            print(f"Text successfully written to {output_filename}")
+            return all_text
+    except Exception as e:
+        print(f"❌ Error extracting text from PDF: {e}")
+        return ""
+
+EXCLUDED_KEYWORDS = [
+    "Payment", "Credit Card Payment", "Autopay", "ACH Payment", "CC Payment",
+    "Card Payment", "Statement Credit", "Balance Transfer", "Payments and Other Credits"
+]
 
 def extract_transactions(text):
-    lines = text.split("\n")
+    """Extract transactions with more flexible parsing for missing cases."""
     transactions = []
-
-    transaction_pattern = re.compile(
-        r"(\d{2}/\d{2})\s+(\d{2}/\d{2})\s+([A-Za-z0-9\s\*\.\#\-\/]+)\s+\d+\s+\d+\s+(-?[\d,]+\.\d{2})(\s+[A-Za-z]*)?"
-    )
+    lines = text.split("\n")
+    buffer = []
 
     for line in lines:
-        match = transaction_pattern.search(line)
+        if re.search(r"\d{2}/\d{2}", line):  # Look for date patterns
+            if buffer:
+                transactions.append(" ".join(buffer))
+                buffer = []
+        buffer.append(line.strip())
+    if buffer:
+        transactions.append(" ".join(buffer))
+    
+    cleaned_transactions = []
+    for transaction in transactions:
+        # Attempt to match transactions using a more general pattern
+        match = re.search(
+            r"(\d{2}/\d{2})\s+(\d{2}/\d{2})\s+(.+?)\s+([A-Z]{2})\s+\d{4}\s+\d{4}\s+([-?\d,]+\.\d{2})", 
+            transaction
+        )
+        
+        if not match:
+            # If regex match fails, try custom matching for known cases like EMPOWER* or UBER*EATS
+            if "EMPOWER*" in transaction or "UBER" in transaction or "IC*" in transaction or "AMAZON" in transaction:
+                match = re.search(
+                    r"(\d{2}/\d{2})\s+(\d{2}/\d{2})\s+(.+?)\s+([A-Z]{2})\s+([-?\d,]+\.\d{2})", 
+                    transaction
+                )
+        
         if match:
-            posting_date, transaction_date, description, amount, state = match.groups()
-            
-            if amount is not None:
+            posting_date, transaction_date, description, state, amount = match.groups()
+            try:
+                # Convert amount to float, handle commas in amounts
                 amount = float(amount.replace(",", ""))
-            else:
-                continue  
-           
-            state = state.strip() if state else "N/A"
+                
+                if amount < 0:  # Ignore negative amounts (payments)
+                    continue
+            except ValueError:
+                continue
 
-            transactions.append({
+            # Exclude unwanted keywords
+            if any(keyword.lower() in description.lower() for keyword in EXCLUDED_KEYWORDS):
+                continue
+
+            cleaned_transactions.append({
                 "Posting Date": posting_date.strip(),
                 "Transaction Date": transaction_date.strip(),
                 "Description": description.strip(),
-                "State": state,
+                "State": state.strip(),
                 "Amount": amount
             })
 
-    return pd.DataFrame(transactions)
-
+    return pd.DataFrame(cleaned_transactions)
 
 class CategoryMapper:
     @staticmethod
     def map_categories(df, llm_api):
         unique_stores = df["Store"].unique()
         query = (
-        "You are an AI assistant specializing in financial transaction classification. "
-        "Given the following store names, classify each one into a predefined category. "
-        "The available categories include common ones like: Food, Shopping, Travel, Services, Health, Entertainment, and others. "
-        "Each category should be simple and relevant, like 'Food', 'Shopping', 'Health', etc. "
-        "If you are unsure about the category, choose the most relevant one based on common usage. "
-        "Feel free to use other known categories that make sense for the store, such as 'Utilities', 'Education', 'Transportation', etc. "
-        "Avoid using complex or ambiguous categories like 'Unknown' or 'GWU'. "
-        "Provide your response in the format: 'Store - Category'."
+         "You are an AI assistant specializing in financial transaction categorization.\n"
+        "Classify each store into one of the following categories: \n"
+        "'Food', 'Grocery', 'Shopping', 'Travel', 'Entertainment', 'Utilities', 'Services', 'Healthcare'.\n"
+        "Avoid incorrect mappings (e.g., 'American Airlines' should be 'Travel', not 'Services')\n"
+        "Avoid Wholefds as GWU, because it is a grocery store \n"
+        "Provide output as 'Store - Category'.\n\n"
 )
         query += "\n".join(unique_stores)
 
@@ -176,7 +228,6 @@ class CreditCardStatementProcessor:
         df_merged.to_csv("categorized_transactions.csv", index=False)
 
     def process_csv(self):
-      
         df = pd.read_csv(io.BytesIO(self.file_bytes))
         categories_df = CategoryMapper.map_categories(df, self.llm_api)
 
@@ -227,4 +278,4 @@ def upload_file():
         return jsonify({"error": "Internal Server Error", "details": str(e)}), 500
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    app.run(debug=True, port=5000, use_reloader=False)
