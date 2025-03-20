@@ -1,143 +1,250 @@
-import os
-import numpy as np
 import pandas as pd
-import arviz as az
-from datetime import datetime, timedelta
+import numpy as np
+from ctgan import CTGANSynthesizer
+from geopy.distance import great_circle
+from scipy.stats import lognorm
+import random
+from datetime import time, datetime, timedelta
 
 
-class TransactionSynthesizer:
-    def __init__(self, merchants_df: pd.DataFrame, categories: list):
-        """
-        :param merchants_df: DataFrame of merchants with columns:
-             Merchant_ID, Business Name, Category, Zipcode, etc.
-        :param categories: the same category list used in CustomerSynthesizer
-        """
-        self.merchants_df = merchants_df.copy()
-        self.categories = categories
+class EnhancedTransactionGenerator:
+    def __init__(self, merchant_df, real_transactions=None):
+        self.merchant_df = merchant_df
+        self.real_transactions = real_transactions
+        self.ctgan = CTGANSynthesizer(epochs=150, batch_size=1000)
+        self._preprocess_data()
+        self._build_indices()
 
-        # For convenience, group merchants by category
-        self.merchants_by_cat = {}
-        for cat in categories:
-            df_cat = self.merchants_df[self.merchants_df["Category"] == cat]
-            self.merchants_by_cat[cat] = df_cat
+    def _preprocess_data(self):
+        """Enrich merchant data with additional features"""
+        # Add popularity weights if not present
+        if 'popularity' not in self.merchant_df.columns:
+            self.merchant_df['popularity'] = self._calculate_initial_popularity()
 
-    def generate_transactions(self, customers_df: pd.DataFrame, weeks: int = 4) -> pd.DataFrame:
-        """
-        For each customer:
-          - We'll interpret 'CategoryDist' as the probability distribution
-            over categories for that person's day-to-day spending.
-          - We generate a certain number of total transactions per week
-            based on their income.
-          - For each transaction:
-             * draw a category from CategoryDist
-             * pick a merchant in that category
-             * pick a random amount/time
-        """
-        all_txns = []
+        # Add operating hours if not present
+        if 'hours' not in self.merchant_df.columns:
+            self.merchant_df['hours'] = self.merchant_df['category'].apply(
+                self._default_operating_hours
+            )
 
-        for _, cust in customers_df.iterrows():
-            cust_id = cust["Customer_ID"]
-            zipcode = str(cust["Zipcode"])
-            income = cust["Income"]
-            cat_dist = np.array(cust["CategoryDist"])  # shape = (len(categories),)
+        # Create category amount distributions
+        self.amount_params = self._create_amount_distributions()
 
-            # Let weekly budget be some fraction of monthly net:
-            # e.g. monthly net ~ income*(1 - 0.2 tax) => weekly ~ /4
-            monthly_net = income * (1 - 0.2)
-            weekly_budget = monthly_net / 4
-            # We'll do ~ (weekly_budget / 50) transactions per week
-            # (Adjust as needed for more realism)
-            transactions_per_week = max(1, int(weekly_budget // 50))
+    def _build_indices(self):
+        """Create various lookup indices"""
+        self.geo_index = self.merchant_df[['business_name', 'latitude', 'longitude']] \
+            .dropna().set_index('business_name').apply(tuple, axis=1).to_dict()
 
-            for w in range(weeks):
-                # For each transaction
-                for _ in range(transactions_per_week):
-                    # 1) pick category via cat_dist
-                    cat_idx = np.random.choice(range(len(self.categories)), p=cat_dist)
-                    category = self.categories[cat_idx]
+        self.category_index = self.merchant_df.groupby('category')['business_name'] \
+            .apply(list).to_dict()
 
-                    # 2) pick a merchant from that category
-                    merchants_cat = self.merchants_by_cat.get(category, None)
-                    if merchants_cat is not None and not merchants_cat.empty:
-                        merchant = merchants_cat.sample(1).iloc[0]
-                    else:
-                        # fallback if none in that category
-                        merchant = {
-                            "Merchant_ID": "NA",
-                            "Business Name": "Misc Merchant",
-                            "Category": category,
-                            "Zipcode": zipcode
-                        }
+        self.zip_category_map = self.merchant_df.groupby(['zipcode', 'category'])['business_name'] \
+            .apply(list).to_dict()
 
-                    # 3) pick amount
-                    # e.g. random up to 5% of weekly budget
-                    amount = np.random.uniform(5, 0.05*weekly_budget)
-                    timestamp = self._random_timestamp(week_index=w)
+    def _calculate_initial_popularity(self):
+        """Calculate initial popularity based on category frequency"""
+        category_counts = self.merchant_df['category'].value_counts(normalize=True)
+        return self.merchant_df['category'].map(category_counts) * np.random.uniform(0.8, 1.2, len(self.merchant_df))
 
-                    txn = {
-                        "Customer_ID": cust_id,
-                        "Zipcode": zipcode,
-                        "Category": category,
-                        "Merchant_ID": merchant.get("Merchant_ID", "NA"),
-                        "Business_Name": merchant.get("Business Name", "Unknown"),
-                        "Amount": round(amount, 2),
-                        "Timestamp": timestamp.strftime("%Y-%m-%d %H:%M:%S")
-                    }
-                    all_txns.append(txn)
+    def _default_operating_hours(self, category):
+        """Assign default operating hours based on category"""
+        hour_ranges = {
+            'Restaurant': ('11:00-14:00', '17:00-22:00'),
+            'Grocery Store': ('08:00-21:00',),
+            'Hotel': ('00:00-23:59',),
+            'Barber Shop': ('09:00-19:00',),
+            'Gasoline Dealer': ('06:00-22:00',),
+            # Add more category-specific defaults
+        }
+        return hour_ranges.get(category, ('10:00-20:00',))
 
-        return pd.DataFrame(all_txns)
+    def _create_amount_distributions(self):
+        """Define category-specific amount distributions"""
+        return {
+            'Restaurant': {'dist': 'lognorm', 'params': (0.5, 15, 100)},
+            'Grocery Store': {'dist': 'lognorm', 'params': (0.6, 30, 150)},
+            'Hotel': {'dist': 'lognorm', 'params': (0.4, 100, 400)},
+            'Gasoline Dealer': {'dist': 'lognorm', 'params': (0.3, 20, 80)},
+            # Add more categories
+            'default': {'dist': 'lognorm', 'params': (0.5, 20, 200)}
+        }
 
-    def _random_timestamp(self, week_index: int) -> datetime:
-        """
-        Return a random datetime for the given 'week_index' offset
-        from the current date.
-        """
-        now = datetime.now()
-        # Subtract 'week_index' weeks
-        base = now - timedelta(weeks=week_index)
+    def _generate_transaction_time(self, merchant):
+        """Generate realistic transaction time within operating hours"""
 
-        # Random day/hours in that week
-        day_offset = np.random.randint(0, 7)
-        hour = np.random.randint(7, 22)  # 7AM to 10PM
-        minute = np.random.randint(0, 60)
+        def parse_time(t_str):
+            return datetime.strptime(t_str, '%H:%M').time()
 
-        return base - timedelta(days=day_offset, hours=(24 - hour), minutes=minute)
+        all_hours = []
+        for period in merchant['hours']:
+            start, end = period.split('-')
+            all_hours.append((parse_time(start), parse_time(end)))
+
+        # Select random operating period
+        period = random.choice(all_hours)
+        start_dt = datetime.combine(datetime.today(), period[0])
+        end_dt = datetime.combine(datetime.today(), period[1])
+
+        # Generate random time within period
+        delta = (end_dt - start_dt).total_seconds()
+        random_seconds = random.uniform(0, delta)
+        return (start_dt + timedelta(seconds=random_seconds)).time()
+
+    def _generate_transaction_amount(self, category):
+        """Generate amount based on category distribution"""
+        params = self.amount_params.get(category, self.amount_params['default'])
+        if params['dist'] == 'lognorm':
+            s, loc, scale = params['params']
+            amount = lognorm.rvs(s, loc=loc, scale=scale)
+            return round(float(amount), 2)
+        return round(random.uniform(20, 200), 2)
+
+    def _weighted_merchant_choice(self, candidates):
+        """Select merchant based on popularity weights"""
+        candidates_df = self.merchant_df[self.merchant_df['business_name'].isin(candidates)]
+        weights = candidates_df['popularity'].values
+        weights /= weights.sum()  # Normalize
+        return np.random.choice(candidates_df['business_name'], p=weights)
+
+    def generate_training_data(self):
+        """Generate enhanced training data"""
+        if self.real_transactions is not None:
+            return self._augment_real_transactions()
+
+        data = []
+        for _ in range(50000):
+            merchant = self.merchant_df.sample(1, weights='popularity').iloc[0]
+            amount = self._generate_transaction_amount(merchant['category'])
+            transaction_time = self._generate_transaction_time(merchant)
+
+            data.append({
+                'merchant': merchant['business_name'],
+                'category': merchant['category'],
+                'amount': amount,
+                'zipcode': merchant['zipcode'],
+                'time': transaction_time.strftime('%H:%M'),
+                'online': int(merchant.get('online_available', False) and random.random() < 0.2)
+            })
+
+        return pd.DataFrame(data)
+
+    def _augment_real_transactions(self):
+        """Enrich real transaction data with additional features"""
+        self.real_transactions['time'] = pd.to_datetime(self.real_transactions['timestamp']).dt.time
+        merged = pd.merge(self.real_transactions, self.merchant_df,
+                          left_on='merchant_id', right_on='business_id')
+
+        # Add missing features
+        merged['online'] = merged['channel'].apply(lambda x: 1 if x == 'online' else 0)
+        return merged[['merchant', 'category', 'amount', 'zipcode', 'time', 'online']]
+
+    def train_model(self):
+        """Train with enhanced data"""
+        training_data = self.generate_training_data()
+        self.ctgan.fit(training_data,
+                       discrete_columns=['merchant', 'category', 'zipcode', 'online', 'time'])
+
+        # Update popularity weights based on training
+        merchant_counts = training_data['merchant'].value_counts(normalize=True)
+        self.merchant_df['popularity'] = self.merchant_df['business_name'].map(merchant_counts) \
+            .fillna(self.merchant_df['popularity'] * 0.5)
+
+    def generate_transactions(self, synthetic_households):
+        """Generate fully realistic transactions"""
+        transactions = []
+        for _, household in synthetic_households.iterrows():
+            zipcode = household['zipcode']
+            num_tx = np.random.poisson(35)  # Average 35 transactions
+
+            # Generate base transactions
+            synth = self.ctgan.sample(num_tx,
+                                      condition_column='zipcode',
+                                      condition_value=zipcode)
+
+            # Merchant validation and selection
+            valid_tx = []
+            for _, tx in synth.iterrows():
+                try:
+                    candidates = self._find_merchant_candidates(zipcode, tx['category'])
+                    if candidates:
+                        merchant = self._weighted_merchant_choice(candidates)
+                        valid_tx.append({
+                            'customer_id': household['customer_id'],
+                            'date': self._generate_realistic_date(),
+                            'merchant': merchant,
+                            'category': tx['category'],
+                            'amount': abs(tx['amount']),
+                            'online': tx['online'],
+                            'zipcode': zipcode
+                        })
+                except KeyError:
+                    continue
+
+            transactions.extend(valid_tx)
+
+        return pd.DataFrame(transactions).drop_duplicates()
+
+    def _find_merchant_candidates(self, zipcode, category):
+        """Find valid merchants with geographic consistency"""
+        # First try same zipcode
+        candidates = self.zip_category_map.get((zipcode, category), [])
+
+        # Then nearby zips within 3km
+        if len(candidates) < 3:
+            nearby_zips = self._find_nearby_zipcodes(zipcode, radius=3)
+            for z in nearby_zips:
+                candidates += self.zip_category_map.get((z, category), [])
+
+        return list(set(candidates))
+
+    def _find_nearby_zipcodes(self, target_zip, radius=3):
+        """Find zipcodes within geographic radius"""
+        target_loc = self.merchant_df[self.merchant_df['zipcode'] == target_zip] \
+            [['latitude', 'longitude']].dropna().mean()
+
+        nearby_zips = set()
+        for _, row in self.merchant_df.iterrows():
+            if pd.notnull(row['latitude']) and pd.notnull(row['longitude']):
+                dist = great_circle((target_loc['latitude'], target_loc['longitude']),
+                                    (row['latitude'], row['longitude'])).km
+                if dist <= radius:
+                    nearby_zips.add(row['zipcode'])
+        return list(nearby_zips)
+
+    def _generate_realistic_date(self):
+        """Generate date within realistic pattern (more recent dates more common)"""
+        base_date = datetime(2023, 1, 1)
+        end_date = datetime(2024, 1, 1)
+        days = (end_date - base_date).days
+        weighted_days = np.sqrt(np.random.uniform(0, days ** 2))
+        return (base_date + timedelta(days=int(weighted_days))).strftime('%Y-%m-%d')
 
 
-#####################################################################
-# 3) Example usage (main script)
-#####################################################################
+# Usage
 if __name__ == "__main__":
-    # We'll use the categories you have in your merchant data
-    ALL_CATEGORIES = [
-        "Athletic Exhibition", "Auto Rental", "Auto Wash", "Bakery", "Barber Shop",
-        "Beauty Booth", "Beauty Shop", "Beauty Shop Braiding", "Beauty Shop Electrology",
-        "Beauty Shop Esthetics", "Beauty Shop Nails", "Bed and Breakfast",
-        "Billiard Parlor", "Boarding House", "Bowling Alley", "Caterers", "Delicatessen",
-        "Driving School", "Food Products", "Food Vending Machine", "Gasoline Dealer",
-        "General Business Licenses", "Grocery Store", "Health Spa", "Hotel",
-        "Ice Cream Manufacture", "Inn And Motel", "Marine Food Retail", "Massage Establishment",
-        "Mobile Delicatessen", "Motion Picture Theatre", "Public Hall", "Restaurant",
-        "Skating Rink", "Special Events", "Theater (Live)", "Tow Truck", "Tow Truck Business",
-        "Tow Truck Storage Lot", "Vacation Rental"
-    ]
+    # Load data
+    merchant_df = pd.read_csv('merchant_data.csv')
+    try:
+        real_transactions = pd.read_csv('real_transactions.csv')
+    except FileNotFoundError:
+        real_transactions = None
 
-    # 2) Generate customers
-    cust_df = customer_synth.generate_customers(num_customers=100)
-    print("Sample of generated customers:\n", cust_df.head())
+    # Initialize generator
+    generator = EnhancedTransactionGenerator(merchant_df, real_transactions)
 
-    # 3) Load your merchant dataset
-    merchants_df = pd.read_csv("merchants.csv")  # must have "Category" matching the above
+    # Train model
+    generator.train_model()
 
-    # 4) Create the TransactionSynthesizer
-    txn_synth = TransactionSynthesizer(merchants_df, ALL_CATEGORIES)
+    # Generate synthetic households
+    synthetic_households = pd.DataFrame({
+        'customer_id': range(1000),
+        'zipcode': np.random.choice(merchant_df['zipcode'].unique(),
+                                    size=1000,
+                                    p=merchant_df['zipcode'].value_counts(normalize=True))
+    })
 
-    # 5) Generate transactions for (e.g.) 4 weeks
-    txn_df = txn_synth.generate_transactions(cust_df, weeks=4)
-    print("Sample of generated transactions:\n", txn_df.head())
+    # Generate transactions
+    transactions = generator.generate_transactions(synthetic_households)
 
-    # 6) Save them out
-    cust_df.to_csv("synthetic_customers.csv", index=False)
-    txn_df.to_csv("synthetic_transactions.csv", index=False)
-
-    print("\nDone! Generated customers & transactions using posterior-based categories & incomes.")
+    # Save results
+    transactions.to_csv('enhanced_transactions.csv', index=False)
