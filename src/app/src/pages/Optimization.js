@@ -44,30 +44,70 @@ const BudgetOptimization = () => {
   }, []);
 
   const optimizeBudget = async () => {
-    console.log("Optimizing budget..."); 
+    console.log("Optimizing budget...");
+    
     if (!categorySpending || Object.keys(categorySpending).length === 0) {
       setSuggestions("No spending data available. Please categorize transactions first.");
       return;
     }
-
+  
     let advice = "\n";
     let flaggedCategories = [];
-
+  
     const income = parseFloat(userDetails.income);
-    const thresholdFactor = income > 40000 ? 0.1 : income > 30000 ? 0.15 : 0.2; 
+    const totalSpending = Object.values(categorySpending).reduce((sum, amount) => sum + amount, 0);
 
+    if (income < totalSpending) {
+      setChatbotResponse(""); 
+      setSuggestions(
+        "🚫 Your total monthly spending exceeds your stated income. Please review and adjust your income value before proceeding with optimization."
+      );
+      return;
+    }
+  
+    const needsThreshold = income * 0.50;
+    const wantsThreshold = income * 0.30; 
+    const savingsThreshold = income * 0.20;
+  
+    let totalNeeds = 0;
+    let totalWants = 0;
+    let totalSavings = 0;
+  
     Object.entries(categorySpending).forEach(([category, amount]) => {
-      const categoryThreshold = amount > (income * thresholdFactor) ? 0.2 : 0.1;  
-
-      if (amount > categoryThreshold * income) {
-        advice += `⚠️ Consider reducing expenses in ${category} (${amount.toFixed(2)})\n`;
-        flaggedCategories.push(category);
+      if (category === "Food" || category === "Housing" || category === "Transportation" || category === "Utilities" || category === "Insurance") {
+        totalNeeds += amount;
+        if (totalNeeds > needsThreshold) {
+          advice += `⚠️ You are spending too much on Needs: ${category} (${amount.toFixed(2)}). Consider cutting back to stay within the 50% budget.\n`;
+          flaggedCategories.push(category);
+        } else {
+          advice += `✅ Spending on ${category} (${amount.toFixed(2)}) is under control within your "Needs" category.\n`;
+        }
+      } else if (category === "Entertainment" || category === "Dining Out" || category === "Shopping" || category === "Travel") {
+        totalWants += amount;
+        if (totalWants > wantsThreshold) {
+          advice += `⚠️ You are spending too much on Wants: ${category} (${amount.toFixed(2)}). Consider cutting back to stay within the 30% budget.\n`;
+          flaggedCategories.push(category);
+        } else {
+          advice += `✅ Spending on ${category} (${amount.toFixed(2)}) is under control within your "Wants" category.\n`;
+        }
       } else {
-        advice += `✅ Spending in ${category} (${amount.toFixed(2)}) is under control.\n`;
+        totalSavings += amount;
+        if (totalSavings < savingsThreshold) {
+          advice += `⚠️ You should increase your savings. Current savings amount: ${amount.toFixed(2)}. Aim for at least 20% of your income in savings.\n`;
+          flaggedCategories.push(category);
+        } else {
+          advice += `✅ You are saving well with ${category} (${amount.toFixed(2)}) within your "Savings" category.\n`;
+        }
       }
     });
-
-    setSuggestions(advice);
+  
+    if (flaggedCategories.length === 0) {
+      advice += "\n🎉 Congratulations! You are on track with your spending and savings. Keep up the good work!";
+    } else {
+      advice += "\n🔔 Consider adjusting your budget to better align with the 50/30/20 rule. By cutting back on non-essential spending and boosting savings, you can achieve a more balanced budget.";
+    }
+  
+    setSuggestions(advice);  
     await getChatbotResponse(flaggedCategories);
   };
 
@@ -77,30 +117,41 @@ const BudgetOptimization = () => {
   };
 
   const validateInputs = () => {
-    if (!/^\d{1,2}$/.test(userDetails.age) || parseInt(userDetails.age) < 18) {
-      setError("Age must be a number, between 18 and 99.");
+    const age = parseInt(userDetails.age);
+    const income = parseFloat(userDetails.income);
+    const children = parseInt(userDetails.children);
+    const maritalStatus = userDetails.maritalStatus.trim().toLowerCase();
+  
+    if (!/^\d{1,2}$/.test(userDetails.age) || age < 18 || age > 99) {
+      setError("Age must be a number between 18 and 99.");
       return false;
     }
-
-    if (!/^\d+(\.\d{1,2})?$/.test(userDetails.income)) {
-      setError("Income must be a valid number.");
+  
+    if (!/^\d+(\.\d{1,2})?$/.test(userDetails.income) || income <= 0) {
+      setError("Income must be a valid number greater than 0.");
       return false;
     }
-
-    if (!/^\d+$/.test(userDetails.children) || parseInt(userDetails.children) < 0) {
-      setError("Children must be a positive integer.");
+  
+    if (!/^\d+$/.test(userDetails.children) || children < 0 || children > 20) {
+      setError("Children must be a positive integer between 0 and 20.");
       return false;
     }
-
-    const maritalStatus = userDetails.maritalStatus.trim().toLowerCase(); 
-    if (!maritalStatus || !["single", "married", "divorced", "widowed"].includes(maritalStatus)) {
+  
+    const validStatuses = ["single", "married", "divorced", "widowed"];
+    if (!maritalStatus || !validStatuses.includes(maritalStatus)) {
       setError("Marital status must be one of the following: single, married, divorced, widowed.");
       return false;
     }
-
+  
+    if (maritalStatus === "single" && children > 3) {
+      setError("Single users usually don't have more than 3 children — please confirm.");
+      return false;
+    }
+  
     setError(null);
     return true;
   };
+  
 
   const getChatbotResponse = async (flaggedCategories) => {
     if (!validateInputs()) return; 
@@ -116,17 +167,21 @@ const BudgetOptimization = () => {
       messages: [
         {
           role: "user",
-          content: `User details: Age: ${userDetails.age}, Income: ${userDetails.income}, Children: ${userDetails.children}, Marital Status: ${userDetails.maritalStatus}. 
-          Monthly Spending Breakdown: ${JSON.stringify(categorySpending)}.
-          ${flaggedCategoriesText}
-          Considering the user's age, income, marital status, and number of children, provide tailored budget optimization suggestions.
-          Focus on how these factors influence their spending habits and what changes could be most effective for their specific situation. 
-          Include recommendations for adjusting spending in key categories (e.g., groceries, shopping, travel) with a clear focus on practical, actionable tips.
-          Calculate how much money the user could save by implementing these strategies based on their financial situation.
-          Finish with a positive and encouraging note to help the user feel empowered about their financial future.`,
+          content: `User details: Age: ${userDetails.age}, Income: ${userDetails.income}, Children: ${userDetails.children}, Marital Status: ${userDetails.maritalStatus}.
+    Monthly Spending Breakdown: ${JSON.stringify(categorySpending)}${flaggedCategoriesText}.
+    
+    Based on the user's demographics and spending, provide personalized budget optimization suggestions. 
+
+    - In grocery recommendations, include **different store names every time**, selected by you (the assistant), based on affordability and general popularity. Do not repeat the same stores across sessions.
+    
+    - Suggest specific action steps for groceries, shopping, travel, and other overspending areas. Suggest estimated monthly savings based on the user's profile.
+    
+    - Tailor recommendations to lifestyle stage and family size (e.g., saving tips for families with children vs. single young professionals).
+    
+    - End with a motivating and positive message. Ensure every response is **unique** and uses **varied store names** and examples.`,
         },
       ],
-      temperature: 0.2,
+      temperature: 0.6,
     };
 
     try {
@@ -135,7 +190,7 @@ const BudgetOptimization = () => {
         requestData,
         {
           headers: {
-            Authorization: `Bearer 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`,
+            Authorization: `Bearer "YOUR_API_KEY"`,
             "Content-Type": "application/json",
           },
         }
@@ -143,7 +198,7 @@ const BudgetOptimization = () => {
 
       if (response.data.choices && response.data.choices.length > 0) {
         setChatbotResponse(response.data.choices[0].message.content.trim());
-        await summarizeTextWithGroq(response.data.choices[0].message.content.trim()); 
+        await summarizeTextWithHuggingFace(response.data.choices[0].message.content.trim()); 
       } else {
         setChatbotResponse("No response from the model.");
       }
@@ -163,49 +218,106 @@ const BudgetOptimization = () => {
     }
   };
 
-  const summarizeTextWithGroq = async (chatbotResponse) => {
-    const API_URL = "https://api.groq.com/openai/v1/chat/completions";
-    const API_KEY = "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";
-
-    const requestData = {
-      model: "llama3-8b-8192", 
-      messages: [
-        {
-          role: "user",
-          content: `Provide a clear, concise, and actionable summary of the following text: ${chatbotResponse} \n
-          `,  
-        },
-      ],
-      temperature: 0.2, 
-      max_tokens: 150,
-    };
-
+  const summarizeTextWithHuggingFace = async (chatbotResponse) => {
     try {
-      const response = await axios.post(API_URL, requestData, {
-        headers: {
-          Authorization: `Bearer ${API_KEY}`,
-          "Content-Type": "application/json",
-        },
-      });
+        const API_URL = "https://api-inference.huggingface.co/models/facebook/bart-large-cnn";
+        const API_KEY = "YOUR_API_KEY";  
 
-      const summary = response.data.choices[0].message.content.trim();
-      setSummaryText(summary);  
+        const prompt = `
+        Summarize the following text in a concise and clear manner. Focus on the most important points and avoid unnecessary details. The summary should reflect key aspects such as spending categories (e.g., groceries, shopping, travel), amounts spent in each category, and practical tips for reducing costs.
+
+        Ensure that the summary ends with an actionable recommendation for the user to optimize their budget effectively. The summary should not exceed 40 lines and must be specific, actionable, and directly related to the user's financial situation.
+
+        Text to summarize:
+        ${chatbotResponse}`;
+
+        const response = await axios.post(API_URL, 
+
+            {
+                inputs: prompt,
+                parameters: {
+                  max_length: 500,  
+                  min_length: 190,  
+                  do_sample: false, 
+              }
+                
+            }, 
+            {
+                headers: {
+                    Authorization: `Bearer ${API_KEY}`,
+                    "Content-Type": "application/json"
+                }
+                
+            }
+        );
+
+        const summary = response.data[0].summary_text;
+        console.log("Summary:", summary);
+        setSummaryText(summary);  
     } catch (error) {
-      console.error("Error while summarizing text:", error);
+        console.error("Error while fetching summary:", error);
+        setSummaryText("Error fetching summary.");
     }
-  };
+};
 
   const toggleSummary = () => {
     setIsSummary(!isSummary);
   };
    
+  const categorySuggestions = {
+    Food: {
+      under: "You're managing your food expenses well! Meal planning is paying off.",
+      over: "Food costs are high. Try meal prepping and using store loyalty programs to cut back.",
+    },
+    Housing: {
+      under: "Great job keeping housing costs stable. That's a solid foundation!",
+      over: "Housing costs seem high. Consider negotiating rent or refinancing if possible.",
+    },
+    Shopping: {
+      under: "Your shopping habits are within budget. Keep tracking discretionary spending.",
+      over: "Too much on shopping? Try setting a fixed monthly limit or use cashback apps.",
+    },
+    Travel: {
+      under: "You're managing travel costs well. Smart travel planning!",
+      over: "Travel is eating into your budget. Try off-season bookings or loyalty points.",
+    },
+    Utilities: {
+      under: "Utility spending is under control. Efficient energy usage helps!",
+      over: "Utility bills are high. Consider turning off unused appliances or adjusting thermostat use.",
+    },
+    Insurance: {
+      under: "Insurance expenses are optimized. Great job!",
+      over: "Check if bundling policies or switching providers could save you on insurance.",
+    },
+    Entertainment: {
+      under: "You are keeping entertainment costs low — that is a smart leisure balance.",
+      over: "Entertainment is over budget. Look for free events or subscription sharing options.",
+    },
+    DiningOut: {
+      under: "Dining out costs are modest. Nice job balancing convenience and savings.",
+      over: "Cut back on eating out — try cooking more meals at home to save.",
+    },
+    Transportation: {
+      under: "Transportation costs are efficient. Great use of transit or fuel management!",
+      over: "Review transport costs. Carpooling or public transit could help.",
+    },
+    default: {
+      under: "This category is well managed.",
+      over: "You may want to review spending in this category.",
+    }
+  };
+  
+  
   const generateSummaryCards = () => {
     return Object.entries(categorySpending).map(([category, amount]) => {
-      const isUnderControl = amount <= (parseFloat(userDetails.income) * 0.1); 
+      const isUnderControl = amount <= (parseFloat(userDetails.income) * 0.1);
       const cardTitle = `${category} - $${amount.toFixed(2)} (${isUnderControl ? "Under Control" : "Over Budget"})`;
+      const cardColor = isUnderControl ? "#4CAF50" : "#FF9800";
+      const iconColor = "#ffffff";
   
-      const cardColor = isUnderControl ? "#4CAF50" : "#FF9800"; 
-      const iconColor = isUnderControl ? "#ffffff" : "#ffffff";  
+      const suggestion =
+        categorySuggestions[category]?.[isUnderControl ? "under" : "over"] ||
+        categorySuggestions["default"][isUnderControl ? "under" : "over"];
   
       return (
         <Grid item xs={12} md={6} key={category}>
@@ -225,21 +337,19 @@ const BudgetOptimization = () => {
           >
             <CardContent>
               <Box sx={{ display: "flex", alignItems: "center", cursor: "pointer" }} onClick={() => toggleCard(category)}>
-                {/* Icon */}
                 <Box sx={{ marginRight: "10px" }}>
-                  {isUnderControl ? (
-                    <Typography sx={{ fontSize: "24px", color: iconColor }}>✔️</Typography> 
-                  ) : (
-                    <Typography sx={{ fontSize: "24px", color: iconColor }}>⚠️</Typography>  
-                  )}
+                  <Typography sx={{ fontSize: "24px", color: iconColor }}>
+                    {isUnderControl ? "✔️" : "⚠️"}
+                  </Typography>
                 </Box>
-                {/* Card Title */}
                 <Typography sx={{ fontWeight: "bold", marginLeft: "8px" }} variant="h6">
                   {cardTitle}
                 </Typography>
               </Box>
               <Collapse in={expandedCard === category} timeout="auto" unmountOnExit>
-                <Typography variant="body2" sx={{ mt: 2, fontSize: "14px" }} />
+                <Typography variant="body2" sx={{ mt: 2, fontSize: "14px" }}>
+                  {suggestion}
+                </Typography>
               </Collapse>
             </CardContent>
           </Card>
@@ -247,7 +357,6 @@ const BudgetOptimization = () => {
       );
     });
   };
-  
 
   return (
     <Box
@@ -276,9 +385,39 @@ const BudgetOptimization = () => {
 
       <Box sx={{ pt: "100px", textAlign: "center" }}>
         <animated.div style={heroAnimation}>
-          <Typography variant="h3" sx={{ fontWeight: "bold", mb: 2 }}>
-            Budget Optimization
+        <Typography
+            variant="h3"
+            sx={{
+              fontFamily: "'Segoe UI Emoji', 'Noto Color Emoji', sans-serif",
+              fontWeight: "bold",
+              mb: 4,
+              letterSpacing: "1.5px",
+              fontSize: { xs: "2rem", md: "3rem" },
+              textAlign: "center",
+              display: "flex",
+              justifyContent: "center",
+              alignItems: "center",
+              gap: "12px",
+              overflow: "visible", 
+            }}
+          >
+            <span style={{ fontSize: "2.5rem", lineHeight: 1 }}>💸</span>
+            <span
+              style={{
+                background: "linear-gradient(135deg, rgb(221, 221, 221),rgb(61, 86, 145), #2b3c5b, rgb(189, 196, 206))",
+                WebkitBackgroundClip: "text",
+                WebkitTextFillColor: "transparent",
+                display: "inline-block",
+                lineHeight: "1.4", 
+                animation: "gradientFlow 6s ease infinite",
+                backgroundSize: "600% 600%",
+
+              }}
+            >
+              Budget Optimization
+            </span>
           </Typography>
+
         </animated.div>
 
         <Fade triggerOnce>
@@ -286,9 +425,21 @@ const BudgetOptimization = () => {
             <Grid item xs={12} md={6}>
               <Card sx={{ backgroundColor: "#2f2f2f", color: "white" }}>
                 <CardContent>
-                  <Typography variant="h5" sx={{ mb: 3 }}>
-                    Answer these questions to optimize your budget:
-                  </Typography>
+                <Typography
+                  variant="h5"
+                  sx={{
+                    mb: 4,
+                    fontWeight: "medium",
+                    fontSize: { xs: "1.25rem", md: "1.5rem" },
+                    color: "#white",
+                    textShadow: "0 0 8px rgba(255, 255, 255, 0.4)",
+                    textAlign: "center",
+                    letterSpacing: "0.5px",
+                    
+                  }}
+                >
+                  📝 Answer these questions to optimize your budget:
+                </Typography>
                   {[
                     { label: "Age", key: "age" },
                     { label: "Income", key: "income" },
@@ -296,7 +447,6 @@ const BudgetOptimization = () => {
                     { label: "Marital Status", key: "maritalStatus" },
                   ].map((field, index) => (
                     <TextField
-                      key={index}
                       label={field.label}
                       variant="outlined"
                       fullWidth
@@ -304,16 +454,52 @@ const BudgetOptimization = () => {
                       name={field.key}
                       value={userDetails[field.key]}
                       onChange={handleInputChange}
-                      sx={{
-                        backgroundColor: "#333",
-                        color: "white",
-                        "& .MuiInputBase-root": { color: "white" },
+                      InputLabelProps={{
+                        sx: { color: "#bbb", fontWeight: "bold", fontSize: "1rem" },
                       }}
+                      InputProps={{
+                        sx: {
+                          color: "white",
+                          backgroundColor: "#1e1e1e",
+                          borderRadius: "12px",
+                          padding: "10px 14px",
+                          "& .MuiOutlinedInput-notchedOutline": {
+                            borderColor: "#444",
+                          },
+                          "&:hover .MuiOutlinedInput-notchedOutline": {
+                            borderColor: "#888",
+                          },
+                          "&.Mui-focused .MuiOutlinedInput-notchedOutline": {
+                            borderColor: "#1976d2", // Blue focus border
+                          },
+                        },
+                      }}
+                      sx={{ mt: 2 }}
                     />
+
                   ))}
                   <Button variant="contained" color="primary" sx={{ mt: 2 }} onClick={optimizeBudget} disabled={isChatting}>
                     {isChatting ? "Processing..." : "Optimize Budget"}
                   </Button>
+                  {suggestions && !chatbotResponse && (
+                    <Typography
+                      sx={{
+                        mt: 3,
+                        px: 3,
+                        py: 2,
+                        backgroundColor: "#ff4444",
+                        borderRadius: "10px",
+                        color: "#fff",
+                        textAlign: "center",
+                        fontWeight: "bold",
+                        boxShadow: "0 0 10px rgba(255, 68, 68, 0.4)",
+                      }}
+                    >
+                      {suggestions}
+                    </Typography> 
+                    
+                  )}
+                  <br></br>
 
                   {error && <Typography color="error">{error}</Typography>}
                   {chatbotResponse && (
@@ -324,14 +510,15 @@ const BudgetOptimization = () => {
                       <Divider sx={{ mb: 2, backgroundColor: "white" }} />
                       
                       {/* Toggle Button for Summary vs Full */}
-                      <Button
-                        variant="contained"
-                        color="secondary"
-                        sx={{ mb: 2 }}
-                        onClick={toggleSummary}
-                      >
-                        {isSummary ? "View Summarized Suggestions" : "View Full Suggestions"}
-                      </Button>
+                      <Box sx={{ textAlign: "center", mb: 2 }}>
+                        <Button
+                          variant="contained"
+                          color="secondary"
+                          onClick={toggleSummary}
+                        >
+                          {isSummary ? "View Summarized Suggestions" : "View Full Suggestions"}
+                        </Button>
+                      </Box>
 
                       {/* Display Full or Summarized Response */}
                       <Box sx={{ padding: 3 }}>
@@ -395,8 +582,26 @@ const BudgetOptimization = () => {
                   <Grid container spacing={3} justifyContent="center">
                     {suggestions && (generateSummaryCards())}
                   </Grid>
-                  <Typography variant="h5" sx={{ mt: 3 }}>
-                    💰 Your Current Spending: ${budget.toFixed(2)}
+                  <Typography
+                    variant="h5"
+                    sx={{
+                      mt: 5,
+                      px: 3,
+                      py: 2,
+                      borderRadius: "12px",
+                      color: "white",
+                      fontWeight: "bold",
+                      textAlign: "center",
+                      boxShadow: "0px 4px 12px rgba(0, 0, 0, 0.3)",
+                      width: "fit-content",
+                      mx: "auto",
+                      fontSize: "1.25rem",
+                      background: "linear-gradient(135deg, rgb(12, 18, 29), #1e2a47, #2b3c5b, rgb(75, 96, 128))",
+                      backgroundSize: "400% 400%",
+                      animation: "gradientFlow 6s ease infinite",
+                    }}
+                  >
+                    💰 Your Current Spending: <span style={{ color: "#FFD700" }}>${budget.toFixed(2)}</span>
                   </Typography>
                 </CardContent>
               </Card>
