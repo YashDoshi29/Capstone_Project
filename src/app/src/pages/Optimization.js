@@ -190,7 +190,7 @@ const BudgetOptimization = () => {
         requestData,
         {
           headers: {
-            Authorization: `Bearer "YOUR_API_KEY"`,
+            Authorization: `Bearer YOUR-API`,
             "Content-Type": "application/json",
           },
         }
@@ -219,46 +219,35 @@ const BudgetOptimization = () => {
   };
 
   const summarizeTextWithHuggingFace = async (chatbotResponse) => {
-    try {
-        const API_URL = "https://api-inference.huggingface.co/models/facebook/bart-large-cnn";
-        const API_KEY = "YOUR_API_KEY";  
+  try {
+    const API_URL = "https://api-inference.huggingface.co/models/facebook/bart-large-cnn";
+    const API_KEY = "YOUR-API";  
 
-        const prompt = `
-        Summarize the following text in a concise and clear manner. Focus on the most important points and avoid unnecessary details. The summary should reflect key aspects such as spending categories (e.g., groceries, shopping, travel), amounts spent in each category, and practical tips for reducing costs.
+    const response = await axios.post(
+      API_URL,
+      {
+        inputs: chatbotResponse,
+        parameters: {
+          do_sample: false,
+        },
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${API_KEY}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
 
-        Ensure that the summary ends with an actionable recommendation for the user to optimize their budget effectively. The summary should not exceed 40 lines and must be specific, actionable, and directly related to the user's financial situation.
-
-        Text to summarize:
-        ${chatbotResponse}`;
-
-        const response = await axios.post(API_URL, 
-
-            {
-                inputs: prompt,
-                parameters: {
-                  max_length: 500,  
-                  min_length: 190,  
-                  do_sample: false, 
-              }
-                
-            }, 
-            {
-                headers: {
-                    Authorization: `Bearer ${API_KEY}`,
-                    "Content-Type": "application/json"
-                }
-                
-            }
-        );
-
-        const summary = response.data[0].summary_text;
-        console.log("Summary:", summary);
-        setSummaryText(summary);  
-    } catch (error) {
-        console.error("Error while fetching summary:", error);
-        setSummaryText("Error fetching summary.");
-    }
+    const summary = response.data[0].summary_text;
+    console.log("Summary:", summary);
+    setSummaryText(summary);
+  } catch (error) {
+    console.error("Error while fetching summary:", error);
+    setSummaryText("Error fetching summary.");
+  }
 };
+
 
   const toggleSummary = () => {
     setIsSummary(!isSummary);
@@ -373,9 +362,7 @@ const BudgetOptimization = () => {
             Financial Assistant
           </Typography>
           <Box>
-            <Button component={Link} to="/dashboard" variant="text" sx={{ color: "white" }}>Home</Button>
-            <Button component={Link} to="/profile" variant="text" sx={{ color: "white" }}>Profile</Button>
-            <Button component={Link} to="/docs" variant="text" sx={{ color: "white" }}>Docs</Button>
+            <Button component={Link} to="/dashboard" variant="text" sx={{ color: "white" }}>ClassifyBot 💡 </Button>
             <Button component={Link} to="/optimization" variant="text" sx={{ color: "white" }}>Optimization</Button>
             <Button component={Link} to="/investment" variant="text" sx={{ color: "white" }}>Investment</Button>
             <Button component={Link} to="/FinancialNews" variant="text" sx={{ color: "white" }}>News</Button>
@@ -404,7 +391,7 @@ const BudgetOptimization = () => {
             <span style={{ fontSize: "2.5rem", lineHeight: 1 }}>💸</span>
             <span
               style={{
-                background: "linear-gradient(135deg, rgb(221, 221, 221),rgb(61, 86, 145), #2b3c5b, rgb(189, 196, 206))",
+                background: "linear-gradient(135deg, rgb(255, 255, 255),rgb(83, 111, 177),rgb(116, 136, 173), rgb(255, 255, 255))",
                 WebkitBackgroundClip: "text",
                 WebkitTextFillColor: "transparent",
                 display: "inline-block",
@@ -438,7 +425,7 @@ const BudgetOptimization = () => {
                     
                   }}
                 >
-                  📝 Answer these questions to optimize your budget:
+                  📝 Help us tailor your money plan:
                 </Typography>
                   {[
                     { label: "Age", key: "age" },
@@ -616,7 +603,7 @@ const BudgetOptimization = () => {
 
       <Box sx={{ textAlign: "center", mt: 4 }}>
         <Button component={Link} to="/investment" variant="contained" color="primary" sx={{ padding: "10px 20px" }}>
-          Go to Financial Assistant
+        🧠 Get Financial Advice
         </Button>
       </Box>
 
