@@ -1,2 +1,4 @@
 # config.py
-API_KEY = "sk-ef33834789e2455f8d340a6184363620"
+import os
+
+API_KEY = os.getenv("API_KEY")
