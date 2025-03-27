@@ -62,7 +62,7 @@ Financial Assistant is a web application designed to help users manage their fin
 1. **Data Processing**:
     - Run the data synthesizer script to generate synthetic individual income data:
       ```sh
-      python src/Data/Data_synthesizer.py
+      python src/Data_Synthesizer/customer_synthesizer.py
       ```
 
 2. **Start the Frontend**:

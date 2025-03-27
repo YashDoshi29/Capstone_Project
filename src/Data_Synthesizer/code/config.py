@@ -1,0 +1,2 @@
+# config.py
+API_KEY = "sk-ef33834789e2455f8d340a6184363620"

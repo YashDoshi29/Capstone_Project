@@ -44,7 +44,7 @@
 #             print("No stock data found.")
 #             return []
 #         document = (
-#             f"Stock Data - Symbol: {quote_data.get('01. symbol', 'N/A')}, "
+#             f"Stock Data_Synthesizer - Symbol: {quote_data.get('01. symbol', 'N/A')}, "
 #             f"Open: {quote_data.get('02. open', 'N/A')}, "
 #             f"High: {quote_data.get('03. high', 'N/A')}, "
 #             f"Low: {quote_data.get('04. low', 'N/A')}, "

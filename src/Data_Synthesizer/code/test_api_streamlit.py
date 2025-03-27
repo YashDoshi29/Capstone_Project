@@ -1,4 +1,4 @@
-import ui as st
+import test_api_streamlit as st
 import pandas as pd
 import numpy as np
 import re
@@ -14,7 +14,7 @@ sys.path.append(project_root)
 try:
     from src.component.customer import AdvancedIncomeModel
 
-    model_path = os.path.abspath("income_model.pkl")
+    model_path = os.path.abspath("../model/income_model.pkl")
     model = AdvancedIncomeModel.load(model_path)
 except Exception as e:
     st.error(f"Error loading the model: {str(e)}")
@@ -22,7 +22,7 @@ except Exception as e:
 
 # Load training data for valid zipcodes.
 try:
-    training_data = pd.read_csv("cleaned_income_data.csv")
+    training_data = pd.read_csv("../data/cleaned_income_data.csv")
     valid_zipcodes = training_data["Zipcode"].dropna().astype(int).unique()
 except Exception as e:
     st.error(f"Error loading training data: {str(e)}")
