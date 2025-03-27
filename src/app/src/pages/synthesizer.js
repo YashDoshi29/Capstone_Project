@@ -178,7 +178,7 @@ function GrokSynthesizer() {
           borderRadius: 4
         }}
       >
-        {isGenerating ? "Generating..." : "Generate Data"}
+        {isGenerating ? "Generating..." : "Generate Data_Synthesizer"}
       </button>
 
       {/* Results */}

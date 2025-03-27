@@ -199,3 +199,11 @@ coverage/
 .DS_Store
 Thumbs.db
 
+# Bayesian_model
+*.nc
+
+# Other models
+*.pkl
+
+#virtual environment
+src/Data_Synthesizer/instance/

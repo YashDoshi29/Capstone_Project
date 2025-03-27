@@ -25,7 +25,7 @@ RELEVANT_CATEGORIES = [
 
 # ✅ Define columns to keep
 COLUMNS_TO_KEEP = {
-    "ENTITY_NAME": "Business Name",
+    "ENTITY_NAME": "Name",
     "LICENSECATEGORY": "Category",
     "SITE_ADDRESS": "Address",
     "CITY": "City",
@@ -111,7 +111,7 @@ def cache_merchant_data():
     """Caches business license data to avoid repeated API calls."""
     os.makedirs(CACHE_DIR, exist_ok=True)
 
-    # Step 1: Fetch and Cache Raw Data
+    # Step 1: Fetch and Cache Raw Data_Synthesizer
     if not os.path.exists(RAW_CSV) or os.path.getsize(RAW_CSV) == 0:
         print("🌐 Fetching fresh merchant data from API...")
         merchants_df = fetch_all_active_dc_businesses()
@@ -123,7 +123,7 @@ def cache_merchant_data():
         print("📂 Loading merchant data from cache...")
         merchants_df = pd.read_csv(RAW_CSV)
 
-    # Step 2: Clean and Cache Processed Data
+    # Step 2: Clean and Cache Processed Data_Synthesizer
     if not os.path.exists(CLEANED_CSV) or os.path.getsize(CLEANED_CSV) == 0:
         clean_dc_businesses(RAW_CSV, CLEANED_CSV)
 
@@ -132,5 +132,5 @@ def cache_merchant_data():
 # Run fetch and clean function if executed directly
 if __name__ == "__main__":
     merchants_df = cache_merchant_data()
-    print("✅ Merchant Data Sample:")
+    print("✅ Merchant Data_Synthesizer Sample:")
     print(merchants_df.head())

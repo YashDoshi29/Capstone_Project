@@ -279,7 +279,7 @@ class AdvancedIncomeModelSynPro:
 
 if __name__ == "__main__":
     # Suppose you have a DataFrame `df` with your raw data
-    df = pd.read_csv("cleaned_income_data.csv")
+    df = pd.read_csv("../data/cleaned_income_data.csv")
 
     # Initialize
     advanced_model = AdvancedIncomeModelSynPro(epochs=50)

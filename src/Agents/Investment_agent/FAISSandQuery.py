@@ -26,7 +26,7 @@
 # NEWS_API_KEY = '4c310cb414224d468ee9087dd9f208d6'  # Replace with your actual key
 
 # ### ========================
-# ### SECTION 1: Data Pipeline Functions
+# ### SECTION 1: Data_Synthesizer Pipeline Functions
 # ### ========================
 
 # # (Functions for fetching and preprocessing data from Alpha Vantage, Yahoo Finance, and NewsAPI)
@@ -61,7 +61,7 @@
 #         close_price = data.get('4. close', 'N/A')
 #         volume = data.get('5. volume', 'N/A')
 #         document = (
-#             f"Stock Data - Date: {date}, Open: {open_price}, High: {high_price}, "
+#             f"Stock Data_Synthesizer - Date: {date}, Open: {open_price}, High: {high_price}, "
 #             f"Low: {low_price}, Close: {close_price}, Volume: {volume}"
 #         )
 #         documents.append(document)
@@ -115,7 +115,7 @@
 #     company_name = fund_data.get("Name", "N/A")
 #     market_cap = fund_data.get("MarketCapitalization", "N/A")
 #     pe_ratio = fund_data.get("PERatio", "N/A")
-#     document = f"Fundamental Data - Company: {company_name}, MarketCap: {market_cap}, P/E Ratio: {pe_ratio}"
+#     document = f"Fundamental Data_Synthesizer - Company: {company_name}, MarketCap: {market_cap}, P/E Ratio: {pe_ratio}"
 #     return [document]
 
 # def fetch_financial_news():
@@ -155,7 +155,7 @@
 #     hist = ticker.history(period="1y", interval="1d")
 #     documents = []
 #     for date, row in hist.iterrows():
-#         doc = f"Yahoo Finance Data - Date: {date.date()}, Open: {row['Open']}, High: {row['High']}, Low: {row['Low']}, Close: {row['Close']}, Volume: {row['Volume']}"
+#         doc = f"Yahoo Finance Data_Synthesizer - Date: {date.date()}, Open: {row['Open']}, High: {row['High']}, Low: {row['Low']}, Close: {row['Close']}, Volume: {row['Volume']}"
 #         documents.append(doc)
 #     return documents
 
@@ -380,7 +380,7 @@
 # # ALPHA_VANTAGE_API_KEY = 'O30LC68NVP5U8YSQ'
 # # NEWS_API_KEY = '4c310cb414224d468ee9087dd9f208d6'  
 
-# # # --- Historical Stock Data Functions ---
+# # # --- Historical Stock Data_Synthesizer Functions ---
 # # def fetch_stock_data(symbol):
 # #     url = 'https://www.alphavantage.co/query'
 # #     params = {
@@ -410,13 +410,13 @@
 # #         close_price = data.get('4. close', 'N/A')
 # #         volume = data.get('5. volume', 'N/A')
 # #         document = (
-# #             f"Stock Data - Date: {date}, Open: {open_price}, High: {high_price}, "
+# #             f"Stock Data_Synthesizer - Date: {date}, Open: {open_price}, High: {high_price}, "
 # #             f"Low: {low_price}, Close: {close_price}, Volume: {volume}"
 # #         )
 # #         documents.append(document)
 # #     return documents
 
-# # # --- Financial News Data Functions ---
+# # # --- Financial News Data_Synthesizer Functions ---
 # # def fetch_financial_news():
 # #     url = "https://newsapi.org/v2/top-headlines"
 # #     params = {
@@ -449,13 +449,13 @@
 # #         documents.append(document)
 # #     return documents
 
-# # # --- Yahoo Finance Data Functions ---
+# # # --- Yahoo Finance Data_Synthesizer Functions ---
 # # def fetch_yahoo_finance_data(symbol):
 # #     ticker = yf.Ticker(symbol)
 # #     hist = ticker.history(period="1y")
 # #     documents = []
 # #     for date, row in hist.iterrows():
-# #         doc = f"Yahoo Finance Data - Date: {date.date()}, Open: {row['Open']}, High: {row['High']}, Low: {row['Low']}, Close: {row['Close']}, Volume: {row['Volume']}"
+# #         doc = f"Yahoo Finance Data_Synthesizer - Date: {date.date()}, Open: {row['Open']}, High: {row['High']}, Low: {row['Low']}, Close: {row['Close']}, Volume: {row['Volume']}"
 # #         documents.append(doc)
 # #     return documents
 

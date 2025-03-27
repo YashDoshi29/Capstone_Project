@@ -22,8 +22,8 @@ async def lifespan(app: FastAPI):
     # Load model and data
     try:
         from src.component.customer import AdvancedIncomeModel
-        app.state.model = AdvancedIncomeModel.load("income_model.pkl")
-        training_data = pd.read_csv("cleaned_income_data.csv")
+        app.state.model = AdvancedIncomeModel.load("../model/income_model.pkl")
+        training_data = pd.read_csv("../data/cleaned_income_data.csv")
         app.state.valid_zipcodes = training_data["Zipcode"].dropna().astype(int).unique().tolist()
     except Exception as e:
         raise RuntimeError(f"Initialization failed: {str(e)}")
