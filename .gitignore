@@ -209,5 +209,5 @@ Thumbs.db
 src/Data_Synthesizer/instance/
 
 # ignore config.py
-src/Data_Synthesizer/config.py
+src/Data_Synthesizer/code/config.py
 
