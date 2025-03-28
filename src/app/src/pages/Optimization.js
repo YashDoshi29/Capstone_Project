@@ -58,14 +58,26 @@ const BudgetOptimization = () => {
 
   useEffect(() => {
     const savedSpending = localStorage.getItem("categorizedSpending");
+    const savedResponse = localStorage.getItem("chatbotResponse");
+    const savedEstimated = localStorage.getItem("estimatedSavings");
+  
     if (savedSpending) {
       const parsedSpending = JSON.parse(savedSpending);
       setCategorySpending(parsedSpending);
-
       const totalBudget = Object.values(parsedSpending).reduce((sum, amount) => sum + amount, 0);
       setBudget(totalBudget);
     }
+  
+    if (savedResponse) {
+      setChatbotResponse(savedResponse); 
+    }
+  
+    if (savedEstimated) {
+      const parsedEstimate = parseFloat(savedEstimated);
+      setEstimatedSavings(parsedEstimate); 
+    }
   }, []);
+  
 
   const optimizeBudget = () => {
     console.log("Optimizing budget...");
@@ -240,6 +252,9 @@ const BudgetOptimization = () => {
         if (!isNaN(average)) {
           setEstimatedSavings(average);
           setSavingsRange(rangeText);
+          localStorage.setItem("estimatedSavings", average.toString()); 
+          localStorage.setItem("chatbotResponse", text); 
+
         }
       } else {
         setChatbotResponse("No response from the model.");
@@ -671,10 +686,18 @@ const BudgetOptimization = () => {
       <br></br>
 
       <Box sx={{ textAlign: "center", mt: 4 }}>
-        <Button component={Link} to="/investment" variant="contained" color="primary" sx={{ padding: "10px 20px" }}>
-        🧠 Get Financial Advice
-        </Button>
-      </Box>
+
+          <Button
+      component={Link}
+      to="/investment"
+      state={{ estimatedSavings }}
+      variant="contained"
+      color="primary"
+      sx={{ padding: "10px 20px" }}
+    >
+      🧠 Get Financial Advice
+    </Button>
+    </Box>
 
       <Box
         component="footer"
