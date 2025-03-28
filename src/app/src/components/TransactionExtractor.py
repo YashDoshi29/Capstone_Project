@@ -35,7 +35,7 @@ class GroqAPI:
         data = {
             "model": self.model_name,
             "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.7
+            "temperature": 0.1
         }
         try:
             response = requests.post(GROQ_API_URL, json=data, headers=headers)
@@ -88,91 +88,94 @@ def extract_text_from_pdf(pdf_bytes, output_filename="extracted_text.txt"):
 
 EXCLUDED_KEYWORDS = [
     "Payment", "Credit Card Payment", "Autopay", "ACH Payment", "CC Payment",
-    "Card Payment", "Statement Credit", "Balance Transfer", "Payments and Other Credits"
+    "Card Payment", "Statement Credit", "Balance Transfer", "Payments and Other Credits", "Interest Charged"
 ]
 
 def extract_transactions(text):
-    """Extract transactions with more flexible parsing for missing cases."""
+    """Robust line-by-line transaction extraction using multiple patterns."""
     transactions = []
-    lines = text.split("\n")
-    buffer = []
 
-    for line in lines:
-        if re.search(r"\d{2}/\d{2}", line):  # Look for date patterns
-            if buffer:
-                transactions.append(" ".join(buffer))
-                buffer = []
-        buffer.append(line.strip())
-    if buffer:
-        transactions.append(" ".join(buffer))
-    
+    # BoA pattern: MM/DD MM/DD Description State [4-digit block(s)] Amount
+    boa_pattern = re.compile(
+        r"(\d{2}/\d{2})\s+(\d{2}/\d{2})\s+(.+?)\s+([A-Z]{2})(?:\s+\d{4}){1,2}\s+([-?\d,]+\.\d{2})"
+    )
+
+    chase_pattern = re.compile(
+        r"(\d{2}/\d{2})\s+(.+?)\s+(-?\d+\.\d{2})$"
+    )
+
     cleaned_transactions = []
-    for transaction in transactions:
-        # Attempt to match transactions using a more general pattern
-        match = re.search(
-            r"(\d{2}/\d{2})\s+(\d{2}/\d{2})\s+(.+?)\s+([A-Z]{2})\s+\d{4}\s+\d{4}\s+([-?\d,]+\.\d{2})", 
-            transaction
-        )
-        
-        if not match:
-            # If regex match fails, try custom matching for known cases like EMPOWER* or UBER*EATS
-            if "EMPOWER*" in transaction or "UBER" in transaction or "IC*" in transaction or "AMAZON" in transaction:
-                match = re.search(
-                    r"(\d{2}/\d{2})\s+(\d{2}/\d{2})\s+(.+?)\s+([A-Z]{2})\s+([-?\d,]+\.\d{2})", 
-                    transaction
-                )
-        
+
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+
+        match = boa_pattern.search(line)
         if match:
             posting_date, transaction_date, description, state, amount = match.groups()
-            try:
-                # Convert amount to float, handle commas in amounts
-                amount = float(amount.replace(",", ""))
-                
-                if amount < 0:  # Ignore negative amounts (payments)
-                    continue
-            except ValueError:
-                continue
-
-            # Exclude unwanted keywords
-            if any(keyword.lower() in description.lower() for keyword in EXCLUDED_KEYWORDS):
-                continue
-
-            cleaned_transactions.append({
-                "Posting Date": posting_date.strip(),
-                "Transaction Date": transaction_date.strip(),
-                "Description": description.strip(),
-                "State": state.strip(),
-                "Amount": amount
-            })
-
-    return pd.DataFrame(cleaned_transactions)
-
-class CategoryMapper:
-    @staticmethod
-    def map_categories(df, llm_api):
-        unique_stores = df["Store"].unique()
-        query = (
-         "You are an AI assistant specializing in financial transaction categorization.\n"
-        "Classify each store into one of the following categories: \n"
-        "'Food', 'Grocery', 'Shopping', 'Travel', 'Entertainment', 'Utilities', 'Services', 'Healthcare'.\n"
-        "Avoid incorrect mappings (e.g., 'American Airlines' should be 'Travel', not 'Services')\n"
-        "Avoid Wholefds as GWU, because it is a grocery store \n"
-        "Provide output as 'Store - Category'.\n\n"
-)
-        query += "\n".join(unique_stores)
+        else:
+            match = chase_pattern.search(line)
+            if match:
+                transaction_date, description, amount = match.groups()
+                posting_date = transaction_date
+                state = ""
+            else:
+                continue  
 
         try:
-            response = llm_api.query(query)
-            categories = [line.strip() for line in response.split("\n") if " - " in line]
-        except Exception as e:
-            raise RuntimeError("Failed to communicate with LLM API. Ensure the service is running.") from e
+            amount = float(amount.replace(",", ""))
+            if amount < 0:
+                continue  
+        except ValueError:
+            continue
 
-        ResponseChecks(data=categories)
-        
-        categories_df = pd.DataFrame({'Transaction vs category': categories})
-        categories_df[['Transaction', 'Category']] = categories_df['Transaction vs category'].str.split(' - ', expand=True)
-        categories_df = categories_df.dropna()
-        return categories_df
+        if any(keyword.lower() in description.lower() for keyword in EXCLUDED_KEYWORDS):
+            continue
+
+        cleaned_transactions.append({
+            "Posting Date": posting_date.strip(),
+            "Transaction Date": transaction_date.strip(),
+            "Description": description.strip(),
+            "State": state.strip(),
+            "Amount": amount
+        })
+
+    return pd.DataFrame(cleaned_transactions)
+class CategoryMapper:
+
+    @staticmethod
+    def map_categories(df, llm_api):
+        unique_stores = df["Store"].dropna().unique().tolist()
+
+        prompt = (
+        "You are a transaction categorization assistant.\n"
+        "Classify ONLY the following store names (provided below) into one of these predefined categories:\n"
+        "'Food', 'Grocery', 'Shopping', 'Travel', 'Entertainment', 'Utilities', 'Services', 'Healthcare'.\n\n"
+        "💡 Rules:\n"
+        "- Use only the store names listed below. Do NOT invent or assume any store names.\n"
+        "- If a store is clearly food-related (including Uber Eats), classify it as 'Food'.\n"
+        "- If a store has 'IC*' in its name, classify it as 'Grocery'.\n"
+        "- If a store matches Uber Trip or Lyft, classify it as 'Travel'.\n"
+        "- Do not include extra text like 'Store list:' or commentary.\n"
+        "- Return only mappings in this format: Store - Category (one per line).\n\n"
+        "Here are the stores:\n" + "\n".join(unique_stores)
+    )
+
+
+        try:
+            response = llm_api.query(prompt)
+            print("🧠 Raw LLM Response:\n", response)
+            mappings = []
+            for line in response.split("\n"):
+                if " - " in line:
+                    store, category = map(str.strip, line.split(" - ", 1))
+                    mappings.append({"Transaction": store, "Category": category})
+        except Exception as e:
+            raise RuntimeError("LLM categorization failed") from e
+
+        return pd.DataFrame(mappings)
+
 
 class FuzzyMatcher:
     @staticmethod
@@ -193,14 +196,13 @@ class StoreNameExtractor:
     @staticmethod
     def extract_store_names(df):
         def clean_store_name(description):
-            doc = nlp(description)
-            possible_names = [ent.text for ent in doc.ents if ent.label_ in ["ORG", "GPE", "FAC", "PRODUCT"]]
-            if possible_names:
-                return possible_names[0]
-            return re.sub(r"[^A-Za-z0-9 ]", "", description).strip()
+            description = re.sub(r"[^A-Za-z0-9\s\*#&'\-.,]", "", description)  
+            description = re.sub(r"\s{2,}", " ", description).strip()  
+            return description
 
         df["Store"] = df["Description"].apply(clean_store_name)
         return df
+
 
 class CreditCardStatementProcessor:
     def __init__(self, file_bytes, file_type, llm_api):
@@ -224,7 +226,7 @@ class CreditCardStatementProcessor:
 
         df['Fuzzy_Match_Description'] = df['Store'].apply(lambda x: FuzzyMatcher.fuzzy_match(x, categories_df['Transaction'].unique()))
         df_merged = pd.merge(df, categories_df, left_on='Fuzzy_Match_Description', right_on='Transaction', how='left').drop(columns=['Fuzzy_Match_Description'])
-
+        df_merged.drop_duplicates(inplace=True)
         df_merged.to_csv("categorized_transactions.csv", index=False)
 
     def process_csv(self):

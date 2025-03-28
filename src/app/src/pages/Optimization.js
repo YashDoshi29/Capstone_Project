@@ -27,10 +27,34 @@ const BudgetOptimization = () => {
   const [isChatting, setIsChatting] = useState(false);
   const [error, setError] = useState(null);
   const [expandedCard, setExpandedCard] = useState(null); 
-  const [isSummary, setIsSummary] = useState(true); 
-  const [summaryText, setSummaryText] = useState(""); 
-
-
+  const [isWarning, setIsWarning] = useState(false);
+  const [estimatedSavings, setEstimatedSavings] = useState(null);
+  const [savingsRange, setSavingsRange] = useState(""); // Optional: shows the low-high range
+    
+  const extractEstimatedSavings = (responseText) => {
+    const regex = /Estimated Monthly Savings:\s*\$?(\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?)\s*-\s*\$?(\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?)/gi;
+  
+    let totalLow = 0;
+    let totalHigh = 0;
+    let matchCount = 0;
+    let match;
+  
+    while ((match = regex.exec(responseText)) !== null) {
+      const low = parseFloat(match[1].replace(/,/g, ""));
+      const high = parseFloat(match[2].replace(/,/g, ""));
+      totalLow += low;
+      totalHigh += high;
+      matchCount++;
+    }
+  
+    if (matchCount === 0) return { average: 0, rangeText: "$0 - $0" };
+  
+    const average = (totalLow + totalHigh) / 2;
+    const rangeText = `$${totalLow.toFixed(0)} - $${totalHigh.toFixed(0)}`;
+  
+    return { average, rangeText };
+  };
+  
 
   useEffect(() => {
     const savedSpending = localStorage.getItem("categorizedSpending");
@@ -43,7 +67,7 @@ const BudgetOptimization = () => {
     }
   }, []);
 
-  const optimizeBudget = async () => {
+  const optimizeBudget = () => {
     console.log("Optimizing budget...");
     
     if (!categorySpending || Object.keys(categorySpending).length === 0) {
@@ -55,19 +79,30 @@ const BudgetOptimization = () => {
     let flaggedCategories = [];
   
     const income = parseFloat(userDetails.income);
+    const children = parseInt(userDetails.children);
+    const maritalStatus = userDetails.maritalStatus.toLowerCase();
     const totalSpending = Object.values(categorySpending).reduce((sum, amount) => sum + amount, 0);
 
     if (income < totalSpending) {
+      setIsWarning(true); 
       setChatbotResponse(""); 
       setSuggestions(
         "🚫 Your total monthly spending exceeds your stated income. Please review and adjust your income value before proceeding with optimization."
       );
       return;
     }
+    setIsWarning(false); 
+
   
-    const needsThreshold = income * 0.50;
-    const wantsThreshold = income * 0.30; 
-    const savingsThreshold = income * 0.20;
+    let adjustedNeedsThreshold = income * 0.50;
+    if (children > 0) adjustedNeedsThreshold += children * 0.02 * income;
+    if (maritalStatus === "married") adjustedNeedsThreshold += 0.05 * income;
+
+    let adjustedWantsThreshold = income * 0.30;
+    if (maritalStatus === "single" && children === 0) adjustedWantsThreshold += 0.05 * income;
+
+    let adjustedSavingsThreshold = income * 0.20;
+    if (children > 2) adjustedSavingsThreshold -= 0.03 * income;
   
     let totalNeeds = 0;
     let totalWants = 0;
@@ -76,7 +111,7 @@ const BudgetOptimization = () => {
     Object.entries(categorySpending).forEach(([category, amount]) => {
       if (category === "Food" || category === "Housing" || category === "Transportation" || category === "Utilities" || category === "Insurance") {
         totalNeeds += amount;
-        if (totalNeeds > needsThreshold) {
+        if (totalNeeds > adjustedNeedsThreshold) {
           advice += `⚠️ You are spending too much on Needs: ${category} (${amount.toFixed(2)}). Consider cutting back to stay within the 50% budget.\n`;
           flaggedCategories.push(category);
         } else {
@@ -84,7 +119,7 @@ const BudgetOptimization = () => {
         }
       } else if (category === "Entertainment" || category === "Dining Out" || category === "Shopping" || category === "Travel") {
         totalWants += amount;
-        if (totalWants > wantsThreshold) {
+        if (totalWants > adjustedWantsThreshold) {
           advice += `⚠️ You are spending too much on Wants: ${category} (${amount.toFixed(2)}). Consider cutting back to stay within the 30% budget.\n`;
           flaggedCategories.push(category);
         } else {
@@ -92,7 +127,7 @@ const BudgetOptimization = () => {
         }
       } else {
         totalSavings += amount;
-        if (totalSavings < savingsThreshold) {
+        if (totalSavings < adjustedSavingsThreshold) {
           advice += `⚠️ You should increase your savings. Current savings amount: ${amount.toFixed(2)}. Aim for at least 20% of your income in savings.\n`;
           flaggedCategories.push(category);
         } else {
@@ -108,7 +143,7 @@ const BudgetOptimization = () => {
     }
   
     setSuggestions(advice);  
-    await getChatbotResponse(flaggedCategories);
+    getChatbotResponse(flaggedCategories);
   };
 
   const handleInputChange = (e) => {
@@ -153,104 +188,79 @@ const BudgetOptimization = () => {
   };
   
 
-  const getChatbotResponse = async (flaggedCategories) => {
-    if (!validateInputs()) return; 
+  const getChatbotResponse = (flaggedCategories) => {
+    if (!validateInputs()) return;
+  
     setIsChatting(true);
     setError(null);
-
+  
     let flaggedCategoriesText = flaggedCategories.length > 0
       ? `The user is spending too much in these categories: ${flaggedCategories.join(", ")}. Provide recommendations on reducing expenses in these areas.`
       : "The user's spending is generally balanced.";
-
+  
     const requestData = {
       model: "llama3-8b-8192",
       messages: [
         {
           role: "user",
           content: `User details: Age: ${userDetails.age}, Income: ${userDetails.income}, Children: ${userDetails.children}, Marital Status: ${userDetails.maritalStatus}.
-    Monthly Spending Breakdown: ${JSON.stringify(categorySpending)}${flaggedCategoriesText}.
-    
-    Based on the user's demographics and spending, provide personalized budget optimization suggestions. 
-
-    - In grocery recommendations, include **different store names every time**, selected by you (the assistant), based on affordability and general popularity. Do not repeat the same stores across sessions.
-    
-    - Suggest specific action steps for groceries, shopping, travel, and other overspending areas. Suggest estimated monthly savings based on the user's profile.
-    
-    - Tailor recommendations to lifestyle stage and family size (e.g., saving tips for families with children vs. single young professionals).
-    
-    - End with a motivating and positive message. Ensure every response is **unique** and uses **varied store names** and examples.`,
+  Monthly Spending Breakdown: ${JSON.stringify(categorySpending)} ${flaggedCategoriesText}.
+  
+  Based on the user's demographics and spending, provide personalized budget optimization suggestions. 
+  
+  - In grocery recommendations, include **different store names every time**, selected by you (the assistant), based on affordability and general popularity. Do not repeat the same stores across sessions.
+  
+  - Suggest specific action steps for groceries, shopping, travel, and other overspending areas. Suggest estimated monthly savings based on the user's profile.
+  
+  - Tailor recommendations to lifestyle stage and family size (e.g., saving tips for families with children vs. single young professionals).
+  
+  - End with a motivating and positive message. Ensure every response is **unique** and uses **varied store names** and examples.`,
         },
       ],
-      temperature: 0.6,
+      temperature: 0.2,
     };
-
-    try {
-      const response = await axios.post(
-        "https://api.groq.com/openai/v1/chat/completions",
-        requestData,
-        {
-          headers: {
-            Authorization: `Bearer YOUR-API`,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-
+  
+    axios.post(
+      "https://api.groq.com/openai/v1/chat/completions",
+      requestData,
+      {
+        headers: {
+          Authorization: `Bearer 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`,
+          "Content-Type": "application/json",
+        },
+      }
+    )
+    .then((response) => {
       if (response.data.choices && response.data.choices.length > 0) {
-        setChatbotResponse(response.data.choices[0].message.content.trim());
-        await summarizeTextWithHuggingFace(response.data.choices[0].message.content.trim()); 
+        const text = response.data.choices[0].message.content.trim();
+        setChatbotResponse(text);
+    
+        // ⬇️ Use new savings extractor
+        const { average, rangeText } = extractEstimatedSavings(text);
+        if (!isNaN(average)) {
+          setEstimatedSavings(average);
+          setSavingsRange(rangeText);
+        }
       } else {
         setChatbotResponse("No response from the model.");
       }
-    } catch (error) {
+    })
+    
+    .catch((error) => {
       console.error("Error interacting with Groq Llama model:", error);
       setError("Sorry, there was an error. Please try again.");
-    } finally {
+    })
+    .finally(() => {
       setIsChatting(false);
-    }
+    });
   };
-
+  
   const toggleCard = (category) => {
     if (expandedCard === category) {
       setExpandedCard(null); 
     } else {
       setExpandedCard(category); 
     }
-  };
-
-  const summarizeTextWithHuggingFace = async (chatbotResponse) => {
-  try {
-    const API_URL = "https://api-inference.huggingface.co/models/facebook/bart-large-cnn";
-    const API_KEY = "YOUR-API";  
-
-    const response = await axios.post(
-      API_URL,
-      {
-        inputs: chatbotResponse,
-        parameters: {
-          do_sample: false,
-        },
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${API_KEY}`,
-          "Content-Type": "application/json",
-        },
-      }
-    );
-
-    const summary = response.data[0].summary_text;
-    console.log("Summary:", summary);
-    setSummaryText(summary);
-  } catch (error) {
-    console.error("Error while fetching summary:", error);
-    setSummaryText("Error fetching summary.");
-  }
-};
-
-
-  const toggleSummary = () => {
-    setIsSummary(!isSummary);
   };
    
   const categorySuggestions = {
@@ -347,28 +357,72 @@ const BudgetOptimization = () => {
     });
   };
 
+  const navItems = [
+    { name: 'ClassifyBot 💡', path: '/dashboard' },
+    { name: 'Optimization', path: '/optimization' },
+    { name: 'Investment', path: '/investment' },
+    { name: 'News', path: '/FinancialNews' },
+  ];
+
   return (
     <Box
       sx={{
         width: "100%",
-        background: "radial-gradient(circle, #0f0f0f, #1c1c1c, #2f2f2f)",
+        background: "radial-gradient(circle, #888888, #444444, #1c1c1c)",
         color: "white",
         minHeight: "100vh",
       }}
     >
-      <AppBar position="fixed" sx={{ background: "transparent", boxShadow: "none", width: "100%", zIndex: 2, padding: "0.5rem 1rem" }}>
-        <Toolbar sx={{ justifyContent: "space-between" }}>
-          <Typography variant="h6" sx={{ fontWeight: "bold", color: "white" }}>
-            Financial Assistant
-          </Typography>
-          <Box>
-            <Button component={Link} to="/dashboard" variant="text" sx={{ color: "white" }}>ClassifyBot 💡 </Button>
-            <Button component={Link} to="/optimization" variant="text" sx={{ color: "white" }}>Optimization</Button>
-            <Button component={Link} to="/investment" variant="text" sx={{ color: "white" }}>Investment</Button>
-            <Button component={Link} to="/FinancialNews" variant="text" sx={{ color: "white" }}>News</Button>
-          </Box>
-        </Toolbar>
-      </AppBar>
+      <AppBar position="fixed" sx={{ backgroundColor: 'transparent', boxShadow: 'none', padding: '0.5rem 1rem' }}>
+      <Toolbar sx={{ justifyContent: 'space-between' }}>
+        <Typography variant="h6" sx={{ fontWeight: 'bold', color: 'white' }}>
+          Financial Assistant
+        </Typography>
+        <Box>
+          {navItems.map((item) => (
+            <Button
+              key={item.name}
+              component={Link}
+              to={item.path}
+              variant="text"
+              sx={{
+                color: 'white',
+                position: 'relative',
+                '&:hover': {
+                  color: '#ADD8E6', 
+                  '&::after': {
+                    content: '""',
+                    position: 'absolute',
+                    width: '100%',
+                    height: '2px',
+                    bottom: 0,
+                    left: 0,
+                    backgroundColor: '#ADD8E6', 
+                    visibility: 'visible',
+                    transform: 'scaleX(1)',
+                    transition: 'all 0.3s ease-in-out',
+                  },
+                },
+                '&::after': {
+                  content: '""',
+                  position: 'absolute',
+                  width: '100%',
+                  height: '2px',
+                  bottom: 0,
+                  left: 0,
+                  backgroundColor: '#ADD8E6',
+                  visibility: 'hidden',
+                  transform: 'scaleX(0)',
+                  transition: 'all 0.3s ease-in-out',
+                },
+              }}
+            >
+              {item.name}
+            </Button>
+          ))}
+        </Box>
+      </Toolbar>
+    </AppBar>
 
       <Box sx={{ pt: "100px", textAlign: "center" }}>
         <animated.div style={heroAnimation}>
@@ -389,20 +443,35 @@ const BudgetOptimization = () => {
             }}
           >
             <span style={{ fontSize: "2.5rem", lineHeight: 1 }}>💸</span>
-            <span
-              style={{
-                background: "linear-gradient(135deg, rgb(255, 255, 255),rgb(83, 111, 177),rgb(116, 136, 173), rgb(255, 255, 255))",
-                WebkitBackgroundClip: "text",
-                WebkitTextFillColor: "transparent",
-                display: "inline-block",
-                lineHeight: "1.4", 
-                animation: "gradientFlow 6s ease infinite",
-                backgroundSize: "600% 600%",
-
-              }}
-            >
+            <span style={{ position: "relative", display: "inline-block" }}>
+            {/* Shadow Layer */}
+            <span style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              color: "#ffffff",
+              opacity: 0.2,
+              filter: "blur(2px)",
+              zIndex: 0,
+            }}>
               Budget Optimization
             </span>
+
+            {/* Gradient Text Layer */}
+            <span style={{
+              background: "linear-gradient(135deg, rgb(255, 255, 255), rgb(140, 161, 211), rgb(116, 136, 173), rgb(255, 255, 255))",
+              WebkitBackgroundClip: "text",
+              WebkitTextFillColor: "transparent",
+              display: "inline-block",
+              lineHeight: "1.4",
+              animation: "gradientFlow 6s ease infinite",
+              backgroundSize: "600% 600%",
+              position: "relative",
+              zIndex: 1,
+            }}>
+              Budget Optimization
+            </span>
+          </span>
           </Typography>
 
         </animated.div>
@@ -457,7 +526,7 @@ const BudgetOptimization = () => {
                             borderColor: "#888",
                           },
                           "&.Mui-focused .MuiOutlinedInput-notchedOutline": {
-                            borderColor: "#1976d2", // Blue focus border
+                            borderColor: "#1976d2", 
                           },
                         },
                       }}
@@ -465,10 +534,25 @@ const BudgetOptimization = () => {
                     />
 
                   ))}
-                  <Button variant="contained" color="primary" sx={{ mt: 2 }} onClick={optimizeBudget} disabled={isChatting}>
+                  <Button variant="contained" color="primary" 
+                  sx={{ 
+                    mt: 2,
+                    background: "linear-gradient(135deg, #4caf50, #388e3c)",
+                    boxShadow: "0 4px 10px rgba(76, 175, 80, 0.3)",
+                    borderRadius: "10px",
+                    fontWeight: "bold",
+                    padding: "10px 16px",
+                    transition: "all 0.3s ease-in-out", 
+                    '&:hover': {
+                      background: "linear-gradient(135deg, #43e97b, #38f9d7)",
+                      boxShadow: "0 8px 20px rgba(67, 233, 123, 0.4)",
+                      transform: "scale(1.03)",
+                    }}} 
+                  onClick={optimizeBudget} disabled={isChatting} 
+                  >
                     {isChatting ? "Processing..." : "Optimize Budget"}
                   </Button>
-                  {suggestions && !chatbotResponse && (
+                  {isWarning && !chatbotResponse && (
                     <Typography
                       sx={{
                         mt: 3,
@@ -495,28 +579,16 @@ const BudgetOptimization = () => {
                         💡 Chatbot Suggestions:
                       </Typography>
                       <Divider sx={{ mb: 2, backgroundColor: "white" }} />
-                      
-                      {/* Toggle Button for Summary vs Full */}
-                      <Box sx={{ textAlign: "center", mb: 2 }}>
-                        <Button
-                          variant="contained"
-                          color="secondary"
-                          onClick={toggleSummary}
-                        >
-                          {isSummary ? "View Summarized Suggestions" : "View Full Suggestions"}
-                        </Button>
-                      </Box>
 
-                      {/* Display Full or Summarized Response */}
+                      {/* Display Full Response */}
                       <Box sx={{ padding: 3 }}>
-                        {isSummary ? (
                           <List
                             sx={{
                               padding: 5,
                               borderRadius: "10px",
-                              background: "linear-gradient(135deg, rgb(12, 18, 29), #1e2a47, #2b3c5b, rgb(75, 96, 128))",
+                              background: "radial-gradient(circle, #888888, #444444, #1c1c1c)",
                               backgroundSize: "200% 200%",
-                              animation: "gradientFlow 3s ease infinite",
+                              animation: "gradientFlow 15s ease infinite",
                               position: "relative",
                             }}
                           >
@@ -535,40 +607,37 @@ const BudgetOptimization = () => {
                               </ListItem>
                             ))}
                           </List>
-                        )
-                         : (
-                          <List
-                            sx={{
-                              padding: 5,
-                              borderRadius: "10px",
-                              background: "linear-gradient(135deg, rgb(12, 18, 29), #1e2a47, #2b3c5b, rgb(75, 96, 128))",
-                              backgroundSize: "200% 200%",
-                              animation: "gradientFlow 3s ease infinite",
-                              position: "relative",
-                            }}
-                          >
-                            {summaryText.split("\n").map((line, index) => (
-                              <ListItem key={index} sx={{ display: "flex", alignItems: "center" }}>
-                                {line.includes("✅") && (
-                                  <Typography sx={{ color: "#4CAF50", fontWeight: "bold", mr: 1 }}>✔️</Typography>
-                                )}
-                                {line.includes("⚠️") && (
-                                  <Typography sx={{ color: "#FF9800", fontWeight: "bold", mr: 1 }}>⚠️</Typography>
-                                )}
-                                {line.includes("💡") && (
-                                  <Typography sx={{ color: "#03A9F4", fontWeight: "bold", mr: 1 }}>💡</Typography>
-                                )}
-                                <Typography sx={{ color: "#fff", fontSize: "14px" }}>{line}</Typography>
-                              </ListItem>
-                            ))}
-                          </List>
-                        )}
                       </Box>
                     </Box>
                   )}
                   <Grid container spacing={3} justifyContent="center">
                     {suggestions && (generateSummaryCards())}
                   </Grid>
+                  {estimatedSavings !== null && (
+                  <Typography
+                    variant="h5"
+                    sx={{
+                      mt: 3,
+                      px: 3,
+                      py: 2,
+                      borderRadius: "12px",
+                      color: "#4CAF50",
+                      fontWeight: "bold",
+                      textAlign: "center",
+                      boxShadow: "0px 4px 12px rgba(0, 0, 0, 0.3)",
+                      width: "fit-content",
+                      mx: "auto",
+                      fontSize: "1.25rem",
+                      background: "radial-gradient(circle, #dfffdc, #a6e4a6, #7ed87e)",
+                      backgroundSize: "400% 400%",
+                      animation: "gradientFlow 6s ease infinite",
+                    }}
+                  >
+                    💰 Estimated Monthly Savings: <span style={{ color: "#2e7d32" }}>${estimatedSavings.toFixed(2)}</span>
+                    {savingsRange && <span style={{ color: "#666", fontSize: "0.9rem" }}> ({savingsRange})</span>}
+                  </Typography>
+                )}
+
                   <Typography
                     variant="h5"
                     sx={{
@@ -583,7 +652,7 @@ const BudgetOptimization = () => {
                       width: "fit-content",
                       mx: "auto",
                       fontSize: "1.25rem",
-                      background: "linear-gradient(135deg, rgb(12, 18, 29), #1e2a47, #2b3c5b, rgb(75, 96, 128))",
+                      background: "radial-gradient(circle, #888888, #444444, #1c1c1c)",
                       backgroundSize: "400% 400%",
                       animation: "gradientFlow 6s ease infinite",
                     }}
@@ -612,7 +681,6 @@ const BudgetOptimization = () => {
         sx={{
           width: "100%",
           padding: "1rem",
-          backgroundColor: "#1c1c1c",
           color: "white",
           textAlign: "center",
         }}
