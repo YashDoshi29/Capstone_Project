@@ -23,6 +23,7 @@ const FinancialQA = () => {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
+  const [estimatedSavings, setEstimatedSavings] = useState(0);
   const chatEndRef = useRef(null);
 
   const sendMessage = () => {
@@ -32,7 +33,6 @@ const FinancialQA = () => {
     setInput("");
     setIsTyping(true);
 
-    // Fake chatbot response (replace with your real API call)
     setTimeout(() => {
       const botMessage = {
         text: `Here's a suggestion based on "${userMessage.text}" — consider creating a weekly budget!`,
@@ -43,13 +43,18 @@ const FinancialQA = () => {
     }, 1500);
   };
 
+  const clearChat = () => {
+    setMessages([]);
+  };
+
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const clearChat = () => {
-    setMessages([]);
-  };
+  useEffect(() => {
+    const stored = localStorage.getItem("estimatedSavings");
+    if (stored) setEstimatedSavings(parseFloat(stored));
+  }, []);
 
   return (
     <Box
@@ -60,14 +65,10 @@ const FinancialQA = () => {
         minHeight: "100vh",
       }}
     >
-      {/* ✅ Fixed Top Nav */}
+      {/* ✅ Top AppBar */}
       <AppBar
         position="fixed"
-        sx={{
-          backgroundColor: "transparent",
-          boxShadow: "none",
-          padding: "0.5rem 1rem",
-        }}
+        sx={{ backgroundColor: "transparent", boxShadow: "none", padding: "0.5rem 1rem" }}
       >
         <Toolbar sx={{ justifyContent: "space-between" }}>
           <Typography variant="h6" sx={{ fontWeight: "bold", color: "white" }}>
@@ -119,10 +120,10 @@ const FinancialQA = () => {
         </Toolbar>
       </AppBar>
 
-      {/* ✅ Main Chat Body */}
+      {/* ✅ Main Chat & Investment Display */}
       <Box
         sx={{
-          pt: "100px", // offset for AppBar
+          pt: "100px",
           maxWidth: "800px",
           mx: "auto",
           px: 2,
@@ -131,7 +132,7 @@ const FinancialQA = () => {
           minHeight: "calc(100vh - 100px)",
         }}
       >
-        {/* Chat Box */}
+        {/* 🧠 Chat Messages */}
         <Box
           sx={{
             flexGrow: 1,
@@ -161,10 +162,7 @@ const FinancialQA = () => {
                   color: "white",
                   px: 2,
                   py: 1.5,
-                  borderRadius:
-                    msg.sender === "user"
-                      ? "12px 12px 0 12px"
-                      : "12px 12px 12px 0",
+                  borderRadius: msg.sender === "user" ? "12px 12px 0 12px" : "12px 12px 12px 0",
                   maxWidth: "75%",
                 }}
               >
@@ -173,17 +171,16 @@ const FinancialQA = () => {
             </Box>
           ))}
           {isTyping && (
-            <Box sx={{ display: "flex", alignItems: "center", mt: 1 }}>
-              <Avatar sx={{ mr: 1 }}>🤖</Avatar>
-              <Typography sx={{ fontStyle: "italic", color: "#ccc" }}>
-                Typing...
-              </Typography>
+            <Box sx={{ display: "flex", alignItems: "center", mt: 1, gap: 1 }}>
+              <Avatar>🤖</Avatar>
+              <Typography sx={{ fontStyle: "italic", color: "#ccc" }}>Typing...</Typography>
+              <CircularProgress size={20} sx={{ color: "#ccc" }} />
             </Box>
           )}
           <div ref={chatEndRef} />
         </Box>
 
-        {/* Input Area */}
+        {/* 💬 Input Field */}
         <Box sx={{ display: "flex", alignItems: "center", mb: 2 }}>
           <TextField
             fullWidth
@@ -203,22 +200,42 @@ const FinancialQA = () => {
               },
             }}
           />
-          <Button
-            onClick={sendMessage}
-            variant="contained"
-            color="primary"
-            sx={{ minWidth: "48px" }}
-          >
+          <Button onClick={sendMessage} variant="contained" color="primary" sx={{ minWidth: "48px" }}>
             <SendIcon />
           </Button>
         </Box>
 
+        {/* 💸 Investment Display */}
+        <Box
+        sx={{
+          mt: 3,
+          px: 2,
+          py: 1.5,
+          borderRadius: "10px",
+          background: "linear-gradient(135deg, #9be15d, #00e3ae)",
+          textAlign: "center",
+          boxShadow: "0px 4px 12px rgba(0,0,0,0.3)",
+          maxWidth: "300px",
+          mx: "auto",
+        }}
+      >
+        <Typography variant="subtitle1" sx={{ fontWeight: "bold", color: "#003b2f", mb: 0.5 }}>
+          💸 Amount You Can Invest
+        </Typography>
+        <Typography variant="h5" sx={{ fontWeight: "bold", color: "#003b2f" }}>
+          ${estimatedSavings.toFixed(2)}
+        </Typography>
+      </Box>
+
+
+        {/* 🗑️ Clear Button */}
         <Button
           variant="outlined"
           color="secondary"
           onClick={clearChat}
           sx={{
             alignSelf: "center",
+            mt: 4,
             mb: 3,
             color: "#fff",
             borderColor: "#ccc",
