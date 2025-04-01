@@ -971,103 +971,313 @@
 #     app_instance.run()
 #     app.run(debug=True)
 
-from flask import Flask, jsonify, request
-from flask_cors import CORS  # Import CORS to allow cross-origin requests
-import logging
+# from flask import Flask, jsonify, request
+# from flask_cors import CORS  # Import CORS to allow cross-origin requests
+# import logging
+# import os
+# import requests
+
+# os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+# # Initialize the Flask app
+# app = Flask(__name__)
+
+# # Enable CORS for all routes
+# CORS(app, resources={"/api/*": {"origins": "*"}})  # Allow all domains for now
+
+# logging.basicConfig(level=logging.DEBUG)
+
+# ALPHA_VANTAGE_API_KEY = 'O30LC68NVP5U8YSQ'
+
+
+# class DataFetcherComponent:
+#     def __init__(self):
+#         self.url = "https://www.alphavantage.co/query"
+#         logging.info("DataFetcherComponent initialized")
+
+#     def fetch_real_time_stock_data(self, symbol):
+#         params = {
+#             'function': 'GLOBAL_QUOTE',
+#             'symbol': symbol,
+#             'apikey': ALPHA_VANTAGE_API_KEY
+#         }
+
+#         try:
+#             response = requests.get(self.url, params=params)
+#             response.raise_for_status()
+#             logging.info(f"Successfully fetched stock data for {symbol}")
+#             return response.json()
+#         except requests.exceptions.HTTPError as err:
+#             logging.error(f"HTTP error occurred: {err}")
+#         except Exception as err:
+#             logging.error(f"An error occurred: {err}")
+#         return None
+
+
+# class QueryHandlerComponent:
+#     def __init__(self, data_fetcher):
+#         self.data_fetcher = data_fetcher
+
+#     def handle_query(self, user_query):
+#         if not user_query:
+#             return {"error": "No query parameter provided."}, 400
+
+#         stock_symbol = user_query.strip().upper()
+#         stock_data = self.data_fetcher.fetch_real_time_stock_data(stock_symbol)
+
+#         if stock_data:
+#             global_quote = stock_data.get('Global Quote', {})
+#             if global_quote:
+#                 response = {
+#                     "symbol": global_quote.get('01. symbol', 'N/A'),
+#                     "open": global_quote.get('02. open', 'N/A'),
+#                     "high": global_quote.get('03. high', 'N/A'),
+#                     "low": global_quote.get('04. low', 'N/A'),
+#                     "price": global_quote.get('05. price', 'N/A'),
+#                     "volume": global_quote.get('06. volume', 'N/A'),
+#                     "latest_trading_day": global_quote.get('07. latest trading day', 'N/A'),
+#                     "previous_close": global_quote.get('08. previous close', 'N/A'),
+#                     "change": global_quote.get('09. change', 'N/A'),
+#                     "change_percent": global_quote.get('10. change percent', 'N/A')
+#                 }
+#                 return jsonify(response), 200
+#             else:
+#                 return {"error": "Unable to fetch valid stock data."}, 500
+#         else:
+#             return {"error": "Unable to fetch stock data."}, 500
+
+
+# class FinancialQAApp:
+#     def __init__(self):
+#         self.data_fetcher = DataFetcherComponent()
+#         self.query_handler = QueryHandlerComponent(self.data_fetcher)
+
+#     def run(self):
+#         @app.route('/api/financial-qa', methods=['GET'])
+#         def query():
+#             user_query = request.args.get('query')
+#             if user_query:
+#                 response, status_code = self.query_handler.handle_query(user_query)
+#                 return response, status_code
+#             else:
+#                 return jsonify({"error": "No query parameter provided."}), 400
+
+#         @app.route('/')
+#         def home():
+#             return "Welcome to the Financial QA API!"
+
+
+# if __name__ == '__main__':
+#     app_instance = FinancialQAApp()
+#     app_instance.run()
+#     app.run(debug=True)
+
+import yfinance as yf
+import numpy as np
+import pandas as pd
+import torch
+import re
 import os
-import requests
+from transformers import (
+    AutoTokenizer,
+    AutoModelForSequenceClassification,
+    Trainer,
+    TrainingArguments
+)
+from sklearn.metrics import accuracy_score
+from datetime import datetime, timedelta
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+import logging
+from typing import Dict, List, Union
 
+# Configuration
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# Initialize the Flask app
 app = Flask(__name__)
+CORS(app)
 
-# Enable CORS for all routes
-CORS(app, resources={"/api/*": {"origins": "*"}})  # Allow all domains for now
+class StockDataProcessor:
+    def __init__(self, tickers: List[str]):
+        self.tickers = tickers
+        self.historical_data: Dict[str, pd.DataFrame] = {}
 
-logging.basicConfig(level=logging.DEBUG)
+    def fetch_data(self, years: int = 5) -> pd.DataFrame:
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=365*years)
+        
+        for ticker in self.tickers:
+            try:
+                data = yf.Ticker(ticker)
+                df = data.history(start=start_date, end=end_date, auto_adjust=True)
+                
+                if df.empty:
+                    continue
+                    
+                df = self._calculate_features(df)
+                df['ticker'] = ticker
+                self.historical_data[ticker] = df
+                
+            except Exception as e:
+                continue
+        
+        if not self.historical_data:
+            raise ValueError("No valid stock data was fetched")
+            
+        return pd.concat(self.historical_data.values())
 
-ALPHA_VANTAGE_API_KEY = 'O30LC68NVP5U8YSQ'
+    def _calculate_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        df = df[['Open', 'High', 'Low', 'Close', 'Volume']].copy()
+        df['returns'] = df['Close'].pct_change()
+        df['sma_10'] = df['Close'].rolling(10).mean()
+        df['ema_50'] = df['Close'].ewm(span=50, adjust=False).mean()
+        df['rsi'] = self._calculate_rsi(df['Close'].values)
+        df['target'] = (df['Close'].shift(-1) > df['Close']).astype(int)
+        return df.dropna()
 
+    @staticmethod
+    def _calculate_rsi(prices: np.ndarray, window: int = 14) -> np.ndarray:
+        deltas = np.diff(prices)
+        seed = deltas[:window+1]
+        up = seed[seed >= 0].sum()/window
+        down = -seed[seed < 0].sum()/window
+        rs = up/down
+        rsi = np.zeros_like(prices)
+        rsi[:window] = 100. - 100./(1.+rs)
+        
+        for i in range(window, len(prices)):
+            delta = deltas[i-1]
+            upval = delta if delta > 0 else 0.
+            downval = -delta if delta < 0 else 0.
+            up = (up*(window-1) + upval)/window
+            down = (down*(window-1) + downval)/window
+            rs = up/down
+            rsi[i] = 100. - 100./(1.+rs)
+            
+        return rsi
 
-class DataFetcherComponent:
-    def __init__(self):
-        self.url = "https://www.alphavantage.co/query"
-        logging.info("DataFetcherComponent initialized")
+class FinancialPredictor:
+    def __init__(self, tickers: List[str], model_dir: str = "./saved_model"):
+        self.tickers = tickers
+        self.model_dir = model_dir
+        self.data_processor = StockDataProcessor(tickers)
+        self.tokenizer = AutoTokenizer.from_pretrained("yiyanghkust/finbert-tone")
+        self.model = AutoModelForSequenceClassification.from_pretrained(
+            "yiyanghkust/finbert-tone",
+            num_labels=2,
+            ignore_mismatched_sizes=True
+        )
+        self.is_trained = False
 
-    def fetch_real_time_stock_data(self, symbol):
-        params = {
-            'function': 'GLOBAL_QUOTE',
-            'symbol': symbol,
-            'apikey': ALPHA_VANTAGE_API_KEY
+    def train(self) -> bool:
+        try:
+            df = self.data_processor.fetch_data()
+            texts, labels = self._create_text_prompts(df)
+            
+            encodings = self.tokenizer(texts, truncation=True, padding=True, max_length=512, return_tensors="pt")
+            
+            training_args = TrainingArguments(
+                output_dir="./results",
+                num_train_epochs=3,
+                per_device_train_batch_size=8,
+                evaluation_strategy="epoch",
+                learning_rate=2e-5
+            )
+            
+            trainer = Trainer(
+                model=self.model,
+                args=training_args,
+                train_dataset=torch.utils.data.TensorDataset(
+                    torch.tensor(encodings['input_ids']),
+                    torch.tensor(labels)
+                ),
+                compute_metrics=lambda eval_pred: {
+                    'accuracy': accuracy_score(*eval_pred)
+                }
+            )
+            
+            trainer.train()
+            self.is_trained = True
+            return True
+            
+        except Exception as e:
+            logger.error(f"Training failed: {str(e)}")
+            return False
+
+    def predict(self, ticker: str) -> Dict[str, Union[str, float]]:
+        if ticker not in self.data_processor.historical_data:
+            self.data_processor.fetch_data()
+            
+        df = self.data_processor.historical_data[ticker]
+        latest = df.iloc[-1:].copy()
+        
+        text = self._create_text_prompts(latest)[0][0]
+        inputs = self.tokenizer(text, return_tensors="pt", truncation=True)
+        
+        with torch.no_grad():
+            outputs = self.model(**inputs)
+        
+        probs = torch.nn.functional.softmax(outputs.logits, dim=-1)
+        confidence = probs[0][1].item()
+        
+        return {
+            'ticker': ticker,
+            'prediction': 'up' if confidence > 0.5 else 'down',
+            'confidence': confidence,
+            'last_close': float(latest['Close'].iloc[0]),
+            'rsi': float(latest['rsi'].iloc[0]),
+            'sma_10': float(latest['sma_10'].iloc[0]),
+            'ema_50': float(latest['ema_50'].iloc[0])
         }
 
-        try:
-            response = requests.get(self.url, params=params)
-            response.raise_for_status()
-            logging.info(f"Successfully fetched stock data for {symbol}")
-            return response.json()
-        except requests.exceptions.HTTPError as err:
-            logging.error(f"HTTP error occurred: {err}")
-        except Exception as err:
-            logging.error(f"An error occurred: {err}")
-        return None
+    def _create_text_prompts(self, df: pd.DataFrame) -> tuple:
+        texts = []
+        labels = []
+        for _, row in df.iterrows():
+            text = (
+                f"Stock {row['ticker']} at {row.name.date()}: "
+                f"Price ${row['Close']:.2f}, "
+                f"RSI {row['rsi']:.1f}, "
+                f"SMA10 ${row['sma_10']:.2f}, "
+                f"EMA50 ${row['ema_50']:.2f}"
+            )
+            texts.append(text)
+            labels.append(int(row['target']))
+        return texts, labels
 
+predictor = FinancialPredictor(["AAPL", "MSFT", "GOOG", "AMZN", "TSLA", "JPM", "NVDA", "WMT"])
 
-class QueryHandlerComponent:
-    def __init__(self, data_fetcher):
-        self.data_fetcher = data_fetcher
+@app.route('/api/analyze', methods=['GET'])
+def analyze():
+    ticker = request.args.get('ticker', '').upper()
+    if not ticker or ticker not in predictor.tickers:
+        return jsonify({'error': 'Invalid ticker'}), 400
+    
+    try:
+        prediction = predictor.predict(ticker)
+        stock = yf.Ticker(ticker).info
+        return jsonify({
+            'ticker': ticker,
+            'prediction': prediction['prediction'],
+            'confidence': prediction['confidence'],
+            'price': prediction['last_close'],
+            'rsi': prediction['rsi'],
+            'sma_10': prediction['sma_10'],
+            'ema_50': prediction['ema_50'],
+            'pe_ratio': stock.get('trailingPE'),
+            'market_cap': stock.get('marketCap'),
+            'dividend_yield': stock.get('dividendYield')
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
-    def handle_query(self, user_query):
-        if not user_query:
-            return {"error": "No query parameter provided."}, 400
-
-        stock_symbol = user_query.strip().upper()
-        stock_data = self.data_fetcher.fetch_real_time_stock_data(stock_symbol)
-
-        if stock_data:
-            global_quote = stock_data.get('Global Quote', {})
-            if global_quote:
-                response = {
-                    "symbol": global_quote.get('01. symbol', 'N/A'),
-                    "open": global_quote.get('02. open', 'N/A'),
-                    "high": global_quote.get('03. high', 'N/A'),
-                    "low": global_quote.get('04. low', 'N/A'),
-                    "price": global_quote.get('05. price', 'N/A'),
-                    "volume": global_quote.get('06. volume', 'N/A'),
-                    "latest_trading_day": global_quote.get('07. latest trading day', 'N/A'),
-                    "previous_close": global_quote.get('08. previous close', 'N/A'),
-                    "change": global_quote.get('09. change', 'N/A'),
-                    "change_percent": global_quote.get('10. change percent', 'N/A')
-                }
-                return jsonify(response), 200
-            else:
-                return {"error": "Unable to fetch valid stock data."}, 500
-        else:
-            return {"error": "Unable to fetch stock data."}, 500
-
-
-class FinancialQAApp:
-    def __init__(self):
-        self.data_fetcher = DataFetcherComponent()
-        self.query_handler = QueryHandlerComponent(self.data_fetcher)
-
-    def run(self):
-        @app.route('/api/financial-qa', methods=['GET'])
-        def query():
-            user_query = request.args.get('query')
-            if user_query:
-                response, status_code = self.query_handler.handle_query(user_query)
-                return response, status_code
-            else:
-                return jsonify({"error": "No query parameter provided."}), 400
-
-        @app.route('/')
-        def home():
-            return "Welcome to the Financial QA API!"
-
+@app.route('/api/stocks', methods=['GET'])
+def stocks():
+    return jsonify({'tickers': predictor.tickers})
 
 if __name__ == '__main__':
-    app_instance = FinancialQAApp()
-    app_instance.run()
-    app.run(debug=True)
+    if not predictor.is_trained:
+        predictor.train()
+    app.run(host='0.0.0.0', port=5001, debug=False)
