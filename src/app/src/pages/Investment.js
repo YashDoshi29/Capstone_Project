@@ -423,7 +423,7 @@ export default function FinancialChatBot() {
         {loading && (
           <Box display="flex" justifyContent="center" alignItems="center" gap={1}>
             <CircularProgress size={20} />
-            <Typography>Analyzing...</Typography>
+            <Typography>Analyzing..</Typography>
           </Box>
         )}
         <div ref={messagesEndRef} />
