@@ -29,33 +29,83 @@ const BudgetOptimization = () => {
   const [expandedCard, setExpandedCard] = useState(null); 
   const [isWarning, setIsWarning] = useState(false);
   const [estimatedSavings, setEstimatedSavings] = useState(null);
-  const [savingsRange, setSavingsRange] = useState(""); // Optional: shows the low-high range
+  const [savingsRange, setSavingsRange] = useState(""); 
     
   const extractEstimatedSavings = (responseText) => {
-    const regex = /Estimated Monthly Savings:\s*\$?(\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?)\s*-\s*\$?(\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?)/gi;
+    const lines = responseText.split("\n");
+    const dollarRegex = /\$?(\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?)/g;
   
-    let totalLow = 0;
-    let totalHigh = 0;
-    let matchCount = 0;
-    let match;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
   
-    while ((match = regex.exec(responseText)) !== null) {
-      const low = parseFloat(match[1].replace(/,/g, ""));
-      const high = parseFloat(match[2].replace(/,/g, ""));
-      totalLow += low;
-      totalHigh += high;
-      matchCount++;
+      const isOverallLine = /overall\s+(estimated\s+)?monthly\s+savings/i.test(line) ||
+                            /overall\s+estimated/i.test(line);
+  
+      if (isOverallLine) {
+        const sameLineMatches = [...line.matchAll(dollarRegex)].map(m =>
+          parseFloat(m[1].replace(/,/g, ""))
+        );
+        if (sameLineMatches.length === 2) {
+          const average = (sameLineMatches[0] + sameLineMatches[1]) / 2;
+          return {
+            average,
+            rangeText: `$${sameLineMatches[0].toFixed(0)} - $${sameLineMatches[1].toFixed(0)}`
+          };
+        } else if (sameLineMatches.length === 1) {
+          return {
+            average: sameLineMatches[0],
+            rangeText: `$${sameLineMatches[0].toFixed(0)}`
+          };
+        }
+  
+        for (let j = i + 1; j <= i + 5 && j < lines.length; j++) {
+          const nextLine = lines[j];
+          if (/per\s+year/i.test(nextLine)) continue;
+  
+          const matches = [...nextLine.matchAll(dollarRegex)].map(m =>
+            parseFloat(m[1].replace(/,/g, ""))
+          );
+  
+          if (matches.length === 2) {
+            const average = (matches[0] + matches[1]) / 2;
+            return {
+              average,
+              rangeText: `$${matches[0].toFixed(0)} - $${matches[1].toFixed(0)}`
+            };
+          } else if (matches.length === 1) {
+            return {
+              average: matches[0],
+              rangeText: `$${matches[0].toFixed(0)}`
+            };
+          }
+        }
+      }
     }
   
-    if (matchCount === 0) return { average: 0, rangeText: "$0 - $0" };
+    for (let line of lines) {
+      if (/save/i.test(line) && /per\s+month/i.test(line) && !/per\s+year/i.test(line)) {
+        const matches = [...line.matchAll(dollarRegex)].map(m =>
+          parseFloat(m[1].replace(/,/g, ""))
+        );
   
-    const average = (totalLow + totalHigh) / 2;
-    const rangeText = `$${totalLow.toFixed(0)} - $${totalHigh.toFixed(0)}`;
+        if (matches.length === 2) {
+          const average = (matches[0] + matches[1]) / 2;
+          return {
+            average,
+            rangeText: `$${matches[0].toFixed(0)} - $${matches[1].toFixed(0)}`
+          };
+        } else if (matches.length === 1) {
+          return {
+            average: matches[0],
+            rangeText: `$${matches[0].toFixed(0)}`
+          };
+        }
+      }
+    }
   
-    return { average, rangeText };
+    return { average: 0, rangeText: "$0" };
   };
   
-
   useEffect(() => {
     const savedSpending = localStorage.getItem("categorizedSpending");
     const savedResponse = localStorage.getItem("chatbotResponse");
@@ -164,34 +214,10 @@ const BudgetOptimization = () => {
   };
 
   const validateInputs = () => {
-    const age = parseInt(userDetails.age);
     const income = parseFloat(userDetails.income);
-    const children = parseInt(userDetails.children);
-    const maritalStatus = userDetails.maritalStatus.trim().toLowerCase();
-  
-    if (!/^\d{1,2}$/.test(userDetails.age) || age < 18 || age > 99) {
-      setError("Age must be a number between 18 and 99.");
-      return false;
-    }
-  
+   
     if (!/^\d+(\.\d{1,2})?$/.test(userDetails.income) || income <= 0) {
       setError("Income must be a valid number greater than 0.");
-      return false;
-    }
-  
-    if (!/^\d+$/.test(userDetails.children) || children < 0 || children > 20) {
-      setError("Children must be a positive integer between 0 and 20.");
-      return false;
-    }
-  
-    const validStatuses = ["single", "married", "divorced", "widowed"];
-    if (!maritalStatus || !validStatuses.includes(maritalStatus)) {
-      setError("Marital status must be one of the following: single, married, divorced, widowed.");
-      return false;
-    }
-  
-    if (maritalStatus === "single" && children > 3) {
-      setError("Single users usually don't have more than 3 children — please confirm.");
       return false;
     }
   
@@ -203,6 +229,20 @@ const BudgetOptimization = () => {
   const getChatbotResponse = (flaggedCategories) => {
     if (!validateInputs()) return;
   
+    const generateCacheKey = (userDetails, spending) => {
+      return JSON.stringify({ userDetails, spending });
+    };
+    
+    const cachedResponses = JSON.parse(localStorage.getItem("savedOptimizations") || "{}");
+    const cacheKey = generateCacheKey(userDetails, categorySpending);
+    
+    if (cachedResponses[cacheKey]) {
+      const cached = cachedResponses[cacheKey];
+      setChatbotResponse(cached.response);
+      setEstimatedSavings(cached.average);
+      setSavingsRange(cached.rangeText);
+      return;
+    }
     setIsChatting(true);
     setError(null);
   
@@ -226,10 +266,12 @@ const BudgetOptimization = () => {
   
   - Tailor recommendations to lifestyle stage and family size (e.g., saving tips for families with children vs. single young professionals).
   
-  - End with a motivating and positive message. Ensure every response is **unique** and uses **varied store names** and examples.`,
+  - Ensure every response is **unique** and uses **varied store names** and examples.
+  
+  - Give **Overall Monthly Savings** at the end everytime in one line only.`,
         },
       ],
-      temperature: 0.2,
+      temperature: 0.1,
     };
   
     axios.post(
@@ -255,6 +297,13 @@ const BudgetOptimization = () => {
           localStorage.setItem("estimatedSavings", average.toString()); 
           localStorage.setItem("chatbotResponse", text); 
 
+          cachedResponses[cacheKey] = {
+            response: text,
+            average,
+            rangeText
+          };
+          localStorage.setItem("savedOptimizations", JSON.stringify(cachedResponses));
+
         }
       } else {
         setChatbotResponse("No response from the model.");
@@ -269,7 +318,7 @@ const BudgetOptimization = () => {
       setIsChatting(false);
     });
   };
-  
+    
   const toggleCard = (category) => {
     if (expandedCard === category) {
       setExpandedCard(null); 
@@ -509,13 +558,10 @@ const BudgetOptimization = () => {
                     
                   }}
                 >
-                  📝 Help us tailor your money plan:
+                  📋 Provide your income to get a customized budget
                 </Typography>
                   {[
-                    { label: "Age", key: "age" },
                     { label: "Income", key: "income" },
-                    { label: "Children", key: "children" },
-                    { label: "Marital Status", key: "maritalStatus" },
                   ].map((field, index) => (
                     <TextField
                       label={field.label}
