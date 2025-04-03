@@ -37,5 +37,5 @@ def add_customer_ids(input_csv_path, output_csv_path=None):
 # Example usage
 if __name__ == "__main__":
     # Path to your customer data CSV
-    input_file = "../data/synthetic_customers_deepseek.csv"
+    input_file = "../data/synthetic_customer_gan.csv"
     add_customer_ids(input_file)
