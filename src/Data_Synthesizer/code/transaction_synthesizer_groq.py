@@ -5,7 +5,6 @@ import numpy as np
 from groq import Groq
 from datetime import datetime, timedelta
 
-api_key = "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"
 client = Groq(api_key=api_key)
 
 # Configuration optimized for DC-specific data
