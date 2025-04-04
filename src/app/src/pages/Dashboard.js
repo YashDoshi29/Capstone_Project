@@ -42,11 +42,20 @@ const Dashboard = () => {
   const [chartType, setChartType] = useState("radar");
 
   useEffect(() => {
+    // Clear charts & data on very first launch (page refresh or hard reload)
+    if (!sessionStorage.getItem("dashboardLaunched")) {
+      localStorage.removeItem("transactions");
+      localStorage.removeItem("categorizedSpending");
+      sessionStorage.setItem("dashboardLaunched", "true");
+    }
+  
+    // Load saved transactions (if any)
     const savedTransactions = localStorage.getItem("transactions");
     if (savedTransactions) {
       setTransactions(JSON.parse(savedTransactions));
     }
   }, []);
+  
 
   const handleFileChange = (event) => {
     setFile(event.target.files[0]);
@@ -276,6 +285,7 @@ const Dashboard = () => {
     { name: 'Optimization', path: '/optimization' },
     { name: 'Investment', path: '/investment' },
     { name: 'News', path: '/FinancialNews' },
+    { name: 'Logout', path: '/'}
   ];
 
   return (
@@ -330,6 +340,7 @@ const Dashboard = () => {
         </Box>
       </Toolbar>
     </AppBar>
+    
       <Box sx={{ pt: "100px", textAlign: "center" }}>
       <animated.div style={heroAnimation}>
         <Typography
@@ -352,12 +363,92 @@ const Dashboard = () => {
         </Typography>
       </animated.div>
         <Fade triggerOnce>
-          <Grid container spacing={3} justifyContent="center">
-            <Grid item xs={12} md={6}>
-              <Card sx={{ backgroundColor: "#2f2f2f", color: "white" }}>
-                <CardContent>
-                <Box sx={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 2, mt: 2 }}>
-                {/* Choose File Button (Warm Sand) */}
+          
+        <Grid container spacing={3} justifyContent="center" alignItems="stretch">
+        {/* Left Info Block */}
+        <Grid item xs={12} md={3}>
+          <Fade direction="left" triggerOnce>
+            <br></br>
+          <Typography sx={{
+            fontFamily: '"Pacifico", cursive',
+            fontSize: "2.5rem",
+            color: "#fff",
+            background: "linear-gradient(135deg, #ffb6c1, #87cefa, #dda0dd, #fff176)",
+            WebkitBackgroundClip: "text",
+            WebkitTextFillColor: "transparent",
+            textShadow: `
+              2px 2px 4px rgba(0,0,0,0.2),
+              4px 4px 8px rgba(0,0,0,0.15)
+            `,
+            animation: "bounce 3s infinite",
+            transform: "rotate(-5deg)",
+
+            textAlign: "center",
+            mb: 2
+          }}
+        > Track Every Penny!
+        </Typography>
+            <br></br>
+            <br></br>
+            <br></br>
+            <br></br>
+            <br></br>
+            <br></br>
+            <br></br>
+            <br></br>
+          <Box
+            sx={{
+              background: "linear-gradient(to bottom right, #232323, #2d2d2d)",
+              padding: "28px",
+              borderRadius: "14px",
+              height: "100%",
+              color: "#ddd",
+              fontSize: "1.05rem",
+              boxShadow: "0 6px 20px rgba(0,0,0,0.4)",
+              lineHeight: 1.75,
+              border: "1px solid #333",
+              display: "flex",
+              flexDirection: "column",
+              justifyContent: "center",
+            }}
+          >
+            <Typography
+              variant="h6"
+              sx={{
+                color: "#FFD700",
+                mb: 2,
+                fontWeight: "bold",
+                fontSize: "1.25rem",
+                textShadow: "0 1px 4px rgba(0,0,0,0.6)",
+              }}
+            >
+              💡 Ready to Dive In?
+            </Typography>
+
+            <Typography
+              sx={{
+                fontSize: "1.05rem",
+                color: "#eee",
+                background: "linear-gradient(90deg, #ffecd2, #fcb69f)",
+                WebkitBackgroundClip: "text",
+                WebkitTextFillColor: "transparent",
+                fontWeight: 500,
+                textShadow: "0 1px 2px rgba(0,0,0,0.3)"
+              }}
+            >
+              Drop your credit card statement. <br />
+              Watch your spending story unfold.
+            </Typography>
+          </Box>
+
+          </Fade>
+        </Grid>
+
+        {/* Center Card (Chart + Upload) */}
+        <Grid item xs={12} md={6}>
+          <Card sx={{ backgroundColor: "#2f2f2f", color: "white" }}>
+            <CardContent>
+              <Box sx={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 2, mt: 2 }}>
                 <label htmlFor="file-upload">
                   <input
                     id="file-upload"
@@ -386,8 +477,6 @@ const Dashboard = () => {
                     📁 Choose File
                   </Button>
                 </label>
-
-                {/* Upload Button (Cool Aqua) */}
                 <Button
                   onClick={handleUpload}
                   disabled={loading}
@@ -408,8 +497,6 @@ const Dashboard = () => {
                   {loading ? "Uploading..." : "Upload"}
                 </Button>
               </Box>
-
-              {/* Optional: Display File Name */}
               {file && (
                 <Typography
                   variant="body2"
@@ -427,69 +514,150 @@ const Dashboard = () => {
                   Selected File: {file.name}
                 </Typography>
               )}
+              {error && <Typography sx={{ color: "red", mt: 2 }}>{error}</Typography>}
+              <Box sx={{ display: "flex", justifyContent: "center", gap: 3, mt: 4, mb: 4 }}>
+                <Button
+                  onClick={() => setChartType("donut")}
+                  sx={{
+                    background: chartType === "donut" ? "linear-gradient(135deg, #d7b899, #b08c5f)" : "transparent",
+                    color: chartType === "donut" ? "white" : "#b08c5f",
+                    border: "2px solid #b08c5f",
+                    padding: "10px 24px",
+                    borderRadius: "10px",
+                    fontWeight: "bold",
+                    fontSize: "1rem",
+                    textTransform: "uppercase",
+                    transition: "all 0.3s ease-in-out",
+                    boxShadow: chartType === "donut" ? "0px 6px 18px rgba(183, 141, 94, 0.4)" : "none",
+                    "&:hover": {
+                      background: "linear-gradient(135deg, #e1c4a0, #b89265)",
+                      boxShadow: "0px 8px 22px rgba(183, 141, 94, 0.6)",
+                      color: "white",
+                    },
+                  }}
+                >
+                  🍩 Donut Chart
+                </Button>
+                <Button
+                  onClick={() => setChartType("radar")}
+                  sx={{
+                    background: chartType === "radar" ? "linear-gradient(135deg, #00c6ff, #0072ff)" : "transparent",
+                    color: chartType === "radar" ? "white" : "#00c6ff",
+                    border: "2px solid #00c6ff",
+                    padding: "10px 24px",
+                    borderRadius: "10px",
+                    fontWeight: "bold",
+                    fontSize: "1rem",
+                    textTransform: "uppercase",
+                    transition: "all 0.3s ease-in-out",
+                    boxShadow: chartType === "radar" ? "0px 6px 18px rgba(0, 198, 255, 0.4)" : "none",
+                    "&:hover": {
+                      background: "linear-gradient(135deg, #33d1ff, #338eff)",
+                      boxShadow: "0px 8px 22px rgba(0, 198, 255, 0.6)",
+                      color: "white",
+                    },
+                  }}
+                >
+                  📡 Radar Chart
+                </Button>
+              </Box>
+              {renderChart()}
+            </CardContent>
+          </Card>
+        </Grid>
 
-                  {error && <Typography sx={{ color: "red", mt: 2 }}>{error}</Typography>}
+        {/* Right Info Block */}
+        <Grid item xs={12} md={3}>
+          <Fade direction="right" triggerOnce>
+            
+          <br></br>
+          <br></br>
+          <br></br>
+          <br></br>
+          <br></br>
+          <br></br>
+          <br></br>
+          <br></br>
+          <br></br>
+          <br></br>
+          <br></br>
+          <br></br>
+          <br></br>
+          <Box
+          sx={{
+            background: "linear-gradient(to bottom right, #232323, #2d2d2d)",
+            padding: "28px",
+            borderRadius: "14px",
+            height: "100%",
+            color: "#ddd",
+            fontSize: "1.05rem",
+            boxShadow: "0 6px 20px rgba(0,0,0,0.4)",
+            lineHeight: 1.75,
+            border: "1px solid #333",
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "center",
+          }}
+        >
+          <Typography
+            variant="h6"
+            sx={{
+              color: "#90ee90",
+              mb: 2,
+              fontWeight: "bold",
+              fontSize: "1.25rem",
+              textShadow: "0 1px 4px rgba(0,0,0,0.6)",
+              fontFamily: "'Poppins', sans-serif", // ✔️ Modern, readable, and elegant
+            }}
+          >
+            Your Next Step 🚀
+          </Typography>
 
-                  <Box sx={{ display: "flex", justifyContent: "center", gap: 3, mt: 4, mb: 4 }}>
-                  <Button
-                    onClick={() => setChartType("donut")}
-                    sx={{
-                      background: chartType === "donut"
-                        ? "linear-gradient(135deg, #d7b899, #b08c5f)"
-                        : "transparent",
-                      color: chartType === "donut" ? "white" : "#b08c5f",
-                      border: "2px solid #b08c5f",
-                      padding: "10px 24px",
-                      borderRadius: "10px",
-                      fontWeight: "bold",
-                      fontSize: "1rem",
-                      textTransform: "uppercase",
-                      transition: "all 0.3s ease-in-out",
-                      boxShadow: chartType === "donut"
-                        ? "0px 6px 18px rgba(183, 141, 94, 0.4)"
-                        : "none",
-                      "&:hover": {
-                        background: "linear-gradient(135deg, #e1c4a0, #b89265)",
-                        boxShadow: "0px 8px 22px rgba(183, 141, 94, 0.6)",
-                        color: "white",
-                      },
-                    }}
-                  >
-                    🍩 Donut Chart
-                  </Button>
-
-                  <Button
-                    onClick={() => setChartType("radar")}
-                    sx={{
-                      background: chartType === "radar"
-                        ? "linear-gradient(135deg, #00c6ff, #0072ff)"
-                        : "transparent",
-                      color: chartType === "radar" ? "white" : "#00c6ff",
-                      border: "2px solid #00c6ff",
-                      padding: "10px 24px",
-                      borderRadius: "10px",
-                      fontWeight: "bold",
-                      fontSize: "1rem",
-                      textTransform: "uppercase",
-                      transition: "all 0.3s ease-in-out",
-                      boxShadow: chartType === "radar"
-                        ? "0px 6px 18px rgba(0, 198, 255, 0.4)"
-                        : "none",
-                      "&:hover": {
-                        background: "linear-gradient(135deg, #33d1ff, #338eff)",
-                        boxShadow: "0px 8px 22px rgba(0, 198, 255, 0.6)",
-                        color: "white",
-                      },
-                    }}
-                  >
-                    📡 Radar Chart
-                  </Button>
-                </Box>
-                  {renderChart()}
-                </CardContent>
-              </Card>
-            </Grid>
-          </Grid>
+          <Typography
+            sx={{
+              fontSize: "1.05rem",
+              color: "#eee",
+              background: "linear-gradient(90deg, #c2e9fb, #a1c4fd)",
+              WebkitBackgroundClip: "text",
+              WebkitTextFillColor: "transparent",
+              fontWeight: 500,
+              fontFamily: "'Poppins', sans-serif", // Use same modern font
+              textShadow: "0 1px 2px rgba(0,0,0,0.3)",
+            }}
+          >
+            Take a peek at your spending patterns.
+            <br />
+            Hop to Optimization for smart ways to save!
+          </Typography>
+        </Box>
+            <br></br>
+            <br></br>
+            <br></br>
+            <br></br>
+            <br></br>
+            <br></br>
+            <br></br>
+            <br></br>
+        <Typography
+          sx={{
+            fontFamily: '"Baloo 2", cursive',
+            fontSize: "2.5rem",
+            background: "linear-gradient(135deg, #fbc2eb, #a6c1ee, #fda085, #f6d365, #c3cfe2)",
+            WebkitBackgroundClip: "text",
+            WebkitTextFillColor: "transparent",
+            textShadow: "0 0 6px rgba(255,255,255,0.25), 0 0 12px rgba(255,255,255,0.15)"
+,
+            transform: "rotate(5deg)",
+            display: "inline-block",
+            textAlign: "center",
+            mb: 2,
+          }}
+        >
+          Grow Smarter Habits
+        </Typography>
+          </Fade>
+        </Grid>
+      </Grid>
         </Fade>
       </Box>
       <br></br>
