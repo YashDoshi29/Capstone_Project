@@ -19,6 +19,14 @@ const BudgetOptimization = () => {
     children: "",
     maritalStatus: "",
   });
+  useEffect(() => {
+    // Clear saved optimization cache on first app load
+    sessionStorage.getItem("appLaunched") || (() => {
+      localStorage.removeItem("savedOptimizations");
+      sessionStorage.setItem("appLaunched", "true");
+    })();
+  }, []);
+  
 
   const [categorySpending, setCategorySpending] = useState({});
   const [suggestions, setSuggestions] = useState("");
@@ -107,10 +115,11 @@ const BudgetOptimization = () => {
   };
   
   useEffect(() => {
-    const savedSpending = localStorage.getItem("categorizedSpending");
-    const savedResponse = localStorage.getItem("chatbotResponse");
-    const savedEstimated = localStorage.getItem("estimatedSavings");
+    setChatbotResponse("");
+    setEstimatedSavings(null);
+    setSavingsRange("");
   
+    const savedSpending = localStorage.getItem("categorizedSpending");
     if (savedSpending) {
       const parsedSpending = JSON.parse(savedSpending);
       setCategorySpending(parsedSpending);
@@ -118,15 +127,12 @@ const BudgetOptimization = () => {
       setBudget(totalBudget);
     }
   
-    if (savedResponse) {
-      setChatbotResponse(savedResponse); 
-    }
-  
-    if (savedEstimated) {
-      const parsedEstimate = parseFloat(savedEstimated);
-      setEstimatedSavings(parsedEstimate); 
+    if (!sessionStorage.getItem("appLaunched")) {
+      localStorage.removeItem("savedOptimizations");
+      sessionStorage.setItem("appLaunched", "true");
     }
   }, []);
+  
   
 
   const optimizeBudget = () => {
@@ -232,11 +238,13 @@ const BudgetOptimization = () => {
     const generateCacheKey = (userDetails, spending) => {
       return JSON.stringify({ userDetails, spending });
     };
-    
+  
     const cachedResponses = JSON.parse(localStorage.getItem("savedOptimizations") || "{}");
     const cacheKey = generateCacheKey(userDetails, categorySpending);
-    
-    if (cachedResponses[cacheKey]) {
+  
+    // ✅ Only return cached if app already launched in this session
+    const appLaunched = sessionStorage.getItem("appLaunched");
+    if (appLaunched && cachedResponses[cacheKey]) {
       const cached = cachedResponses[cacheKey];
       setChatbotResponse(cached.response);
       setEstimatedSavings(cached.average);
@@ -426,6 +434,8 @@ const BudgetOptimization = () => {
     { name: 'Optimization', path: '/optimization' },
     { name: 'Investment', path: '/investment' },
     { name: 'News', path: '/FinancialNews' },
+    { name: 'Logout', path: '/'}
+
   ];
 
   return (

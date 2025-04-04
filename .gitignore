@@ -204,6 +204,8 @@ Thumbs.db
 
 # Other models
 *.pkl
+*.pt
+*.pth
 
 #virtual environment
 src/Data_Synthesizer/instance/
@@ -211,3 +213,5 @@ src/Data_Synthesizer/instance/
 # ignore config.py
 src/Data_Synthesizer/code/config.py
 
+src/app/src/API/finetuned_finbert/checkpoint-16000/scheduler.pt
+src/app/src/API/finetuned_finbert/checkpoint-16143/model.safetensors
