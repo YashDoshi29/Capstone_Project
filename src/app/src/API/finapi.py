@@ -821,6 +821,15 @@
 #     app_instance.run()
 #     app.run(debug=True)
 
+
+
+
+
+
+
+
+
+
 # import os
 # import requests
 # from flask import Flask, jsonify, request
@@ -1072,212 +1081,371 @@
 #     app_instance.run()
 #     app.run(debug=True)
 
-import yfinance as yf
-import numpy as np
-import pandas as pd
-import torch
-import re
-import os
-from transformers import (
-    AutoTokenizer,
-    AutoModelForSequenceClassification,
-    Trainer,
-    TrainingArguments
-)
-from sklearn.metrics import accuracy_score
-from datetime import datetime, timedelta
+
+
+
+
+
+
+
+
+
+
+
+#YASH
+
+# import yfinance as yf
+# import numpy as np
+# import pandas as pd
+# import torch
+# import re
+# import os
+# from transformers import (
+#     AutoTokenizer,
+#     AutoModelForSequenceClassification,
+#     Trainer,
+#     TrainingArguments
+# )
+# from sklearn.metrics import accuracy_score
+# from datetime import datetime, timedelta
+# from flask import Flask, request, jsonify
+# from flask_cors import CORS
+# import logging
+# from typing import Dict, List, Union
+
+# # Configuration
+# os.environ["TOKENIZERS_PARALLELISM"] = "false"
+# logging.basicConfig(level=logging.INFO)
+# logger = logging.getLogger(__name__)
+
+# app = Flask(__name__)
+# CORS(app)
+
+# class StockDataProcessor:
+#     def __init__(self, tickers: List[str]):
+#         self.tickers = tickers
+#         self.historical_data: Dict[str, pd.DataFrame] = {}
+
+#     def fetch_data(self, years: int = 5) -> pd.DataFrame:
+#         end_date = datetime.now()
+#         start_date = end_date - timedelta(days=365*years)
+        
+#         for ticker in self.tickers:
+#             try:
+#                 data = yf.Ticker(ticker)
+#                 df = data.history(start=start_date, end=end_date, auto_adjust=True)
+                
+#                 if df.empty:
+#                     continue
+                    
+#                 df = self._calculate_features(df)
+#                 df['ticker'] = ticker
+#                 self.historical_data[ticker] = df
+                
+#             except Exception as e:
+#                 continue
+        
+#         if not self.historical_data:
+#             raise ValueError("No valid stock data was fetched")
+            
+#         return pd.concat(self.historical_data.values())
+
+#     def _calculate_features(self, df: pd.DataFrame) -> pd.DataFrame:
+#         df = df[['Open', 'High', 'Low', 'Close', 'Volume']].copy()
+#         df['returns'] = df['Close'].pct_change()
+#         df['sma_10'] = df['Close'].rolling(10).mean()
+#         df['ema_50'] = df['Close'].ewm(span=50, adjust=False).mean()
+#         df['rsi'] = self._calculate_rsi(df['Close'].values)
+#         df['target'] = (df['Close'].shift(-1) > df['Close']).astype(int)
+#         return df.dropna()
+
+#     @staticmethod
+#     def _calculate_rsi(prices: np.ndarray, window: int = 14) -> np.ndarray:
+#         deltas = np.diff(prices)
+#         seed = deltas[:window+1]
+#         up = seed[seed >= 0].sum()/window
+#         down = -seed[seed < 0].sum()/window
+#         rs = up/down
+#         rsi = np.zeros_like(prices)
+#         rsi[:window] = 100. - 100./(1.+rs)
+        
+#         for i in range(window, len(prices)):
+#             delta = deltas[i-1]
+#             upval = delta if delta > 0 else 0.
+#             downval = -delta if delta < 0 else 0.
+#             up = (up*(window-1) + upval)/window
+#             down = (down*(window-1) + downval)/window
+#             rs = up/down
+#             rsi[i] = 100. - 100./(1.+rs)
+            
+#         return rsi
+
+# class FinancialPredictor:
+#     def __init__(self, tickers: List[str], model_dir: str = "./saved_model"):
+#         self.tickers = tickers
+#         self.model_dir = model_dir
+#         self.data_processor = StockDataProcessor(tickers)
+#         self.tokenizer = AutoTokenizer.from_pretrained("yiyanghkust/finbert-tone")
+#         self.model = AutoModelForSequenceClassification.from_pretrained(
+#             "yiyanghkust/finbert-tone",
+#             num_labels=2,
+#             ignore_mismatched_sizes=True
+#         )
+#         self.is_trained = False
+
+#     def train(self) -> bool:
+#         try:
+#             df = self.data_processor.fetch_data()
+#             texts, labels = self._create_text_prompts(df)
+            
+#             encodings = self.tokenizer(texts, truncation=True, padding=True, max_length=512, return_tensors="pt")
+            
+#             training_args = TrainingArguments(
+#                 output_dir="./results",
+#                 num_train_epochs=3,
+#                 per_device_train_batch_size=8,
+#                 evaluation_strategy="epoch",
+#                 learning_rate=2e-5
+#             )
+            
+#             trainer = Trainer(
+#                 model=self.model,
+#                 args=training_args,
+#                 train_dataset=torch.utils.data.TensorDataset(
+#                     torch.tensor(encodings['input_ids']),
+#                     torch.tensor(labels)
+#                 ),
+#                 compute_metrics=lambda eval_pred: {
+#                     'accuracy': accuracy_score(*eval_pred)
+#                 }
+#             )
+            
+#             trainer.train()
+#             self.is_trained = True
+#             return True
+            
+#         except Exception as e:
+#             logger.error(f"Training failed: {str(e)}")
+#             return False
+
+#     def predict(self, ticker: str) -> Dict[str, Union[str, float]]:
+#         if ticker not in self.data_processor.historical_data:
+#             self.data_processor.fetch_data()
+            
+#         df = self.data_processor.historical_data[ticker]
+#         latest = df.iloc[-1:].copy()
+        
+#         text = self._create_text_prompts(latest)[0][0]
+#         inputs = self.tokenizer(text, return_tensors="pt", truncation=True)
+        
+#         with torch.no_grad():
+#             outputs = self.model(**inputs)
+        
+#         probs = torch.nn.functional.softmax(outputs.logits, dim=-1)
+#         confidence = probs[0][1].item()
+        
+#         return {
+#             'ticker': ticker,
+#             'prediction': 'up' if confidence > 0.5 else 'down',
+#             'confidence': confidence,
+#             'last_close': float(latest['Close'].iloc[0]),
+#             'rsi': float(latest['rsi'].iloc[0]),
+#             'sma_10': float(latest['sma_10'].iloc[0]),
+#             'ema_50': float(latest['ema_50'].iloc[0])
+#         }
+
+#     def _create_text_prompts(self, df: pd.DataFrame) -> tuple:
+#         texts = []
+#         labels = []
+#         for _, row in df.iterrows():
+#             text = (
+#                 f"Stock {row['ticker']} at {row.name.date()}: "
+#                 f"Price ${row['Close']:.2f}, "
+#                 f"RSI {row['rsi']:.1f}, "
+#                 f"SMA10 ${row['sma_10']:.2f}, "
+#                 f"EMA50 ${row['ema_50']:.2f}"
+#             )
+#             texts.append(text)
+#             labels.append(int(row['target']))
+#         return texts, labels
+
+# predictor = FinancialPredictor(["AAPL", "MSFT", "GOOG", "AMZN", "TSLA", "JPM", "NVDA", "WMT"])
+
+# @app.route('/api/analyze', methods=['GET'])
+# def analyze():
+#     ticker = request.args.get('ticker', '').upper()
+#     if not ticker or ticker not in predictor.tickers:
+#         return jsonify({'error': 'Invalid ticker'}), 400
+    
+#     try:
+#         prediction = predictor.predict(ticker)
+#         stock = yf.Ticker(ticker).info
+#         return jsonify({
+#             'ticker': ticker,
+#             'prediction': prediction['prediction'],
+#             'confidence': prediction['confidence'],
+#             'price': prediction['last_close'],
+#             'rsi': prediction['rsi'],
+#             'sma_10': prediction['sma_10'],
+#             'ema_50': prediction['ema_50'],
+#             'pe_ratio': stock.get('trailingPE'),
+#             'market_cap': stock.get('marketCap'),
+#             'dividend_yield': stock.get('dividendYield')
+#         })
+#     except Exception as e:
+#         return jsonify({'error': str(e)}), 500
+
+# @app.route('/api/stocks', methods=['GET'])
+# def stocks():
+#     return jsonify({'tickers': predictor.tickers})
+
+# if __name__ == '__main__':
+#     if not predictor.is_trained:
+#         predictor.train()
+#     app.run(host='0.0.0.0', port=5001, debug=False)
+
+
+#NEMI
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+import yfinance as yf
+import numpy as np
+from datetime import datetime
 import logging
-from typing import Dict, List, Union
-
-# Configuration
-os.environ["TOKENIZERS_PARALLELISM"] = "false"
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-CORS(app)
+CORS(app)  # Enable CORS for all routes
 
-class StockDataProcessor:
-    def __init__(self, tickers: List[str]):
-        self.tickers = tickers
-        self.historical_data: Dict[str, pd.DataFrame] = {}
+# Configuration
+SUPPORTED_TICKERS = ["AAPL", "MSFT", "GOOG", "AMZN", "TSLA", "JPM", "NVDA", "WMT"]
+RISK_LEVELS = {
+    'low': ['JPM', 'WMT'],       # Stable blue-chip stocks
+    'medium': ['AAPL', 'MSFT'],  # Balanced growth
+    'high': ['TSLA', 'NVDA']     # High-growth tech
+}
 
-    def fetch_data(self, years: int = 5) -> pd.DataFrame:
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=365*years)
-        
-        for ticker in self.tickers:
-            try:
-                data = yf.Ticker(ticker)
-                df = data.history(start=start_date, end=end_date, auto_adjust=True)
-                
-                if df.empty:
-                    continue
-                    
-                df = self._calculate_features(df)
-                df['ticker'] = ticker
-                self.historical_data[ticker] = df
-                
-            except Exception as e:
-                continue
-        
-        if not self.historical_data:
-            raise ValueError("No valid stock data was fetched")
-            
-        return pd.concat(self.historical_data.values())
+# In-memory storage
+user_profile = {
+    'available_amount': 5000.0,
+    'risk_preference': 'medium'
+}
 
-    def _calculate_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        df = df[['Open', 'High', 'Low', 'Close', 'Volume']].copy()
-        df['returns'] = df['Close'].pct_change()
-        df['sma_10'] = df['Close'].rolling(10).mean()
-        df['ema_50'] = df['Close'].ewm(span=50, adjust=False).mean()
-        df['rsi'] = self._calculate_rsi(df['Close'].values)
-        df['target'] = (df['Close'].shift(-1) > df['Close']).astype(int)
-        return df.dropna()
-
-    @staticmethod
-    def _calculate_rsi(prices: np.ndarray, window: int = 14) -> np.ndarray:
-        deltas = np.diff(prices)
-        seed = deltas[:window+1]
-        up = seed[seed >= 0].sum()/window
-        down = -seed[seed < 0].sum()/window
-        rs = up/down
-        rsi = np.zeros_like(prices)
-        rsi[:window] = 100. - 100./(1.+rs)
-        
-        for i in range(window, len(prices)):
-            delta = deltas[i-1]
-            upval = delta if delta > 0 else 0.
-            downval = -delta if delta < 0 else 0.
-            up = (up*(window-1) + upval)/window
-            down = (down*(window-1) + downval)/window
-            rs = up/down
-            rsi[i] = 100. - 100./(1.+rs)
-            
-        return rsi
-
-class FinancialPredictor:
-    def __init__(self, tickers: List[str], model_dir: str = "./saved_model"):
-        self.tickers = tickers
-        self.model_dir = model_dir
-        self.data_processor = StockDataProcessor(tickers)
-        self.tokenizer = AutoTokenizer.from_pretrained("yiyanghkust/finbert-tone")
-        self.model = AutoModelForSequenceClassification.from_pretrained(
-            "yiyanghkust/finbert-tone",
-            num_labels=2,
-            ignore_mismatched_sizes=True
-        )
-        self.is_trained = False
-
-    def train(self) -> bool:
-        try:
-            df = self.data_processor.fetch_data()
-            texts, labels = self._create_text_prompts(df)
-            
-            encodings = self.tokenizer(texts, truncation=True, padding=True, max_length=512, return_tensors="pt")
-            
-            training_args = TrainingArguments(
-                output_dir="./results",
-                num_train_epochs=3,
-                per_device_train_batch_size=8,
-                evaluation_strategy="epoch",
-                learning_rate=2e-5
-            )
-            
-            trainer = Trainer(
-                model=self.model,
-                args=training_args,
-                train_dataset=torch.utils.data.TensorDataset(
-                    torch.tensor(encodings['input_ids']),
-                    torch.tensor(labels)
-                ),
-                compute_metrics=lambda eval_pred: {
-                    'accuracy': accuracy_score(*eval_pred)
-                }
-            )
-            
-            trainer.train()
-            self.is_trained = True
-            return True
-            
-        except Exception as e:
-            logger.error(f"Training failed: {str(e)}")
-            return False
-
-    def predict(self, ticker: str) -> Dict[str, Union[str, float]]:
-        if ticker not in self.data_processor.historical_data:
-            self.data_processor.fetch_data()
-            
-        df = self.data_processor.historical_data[ticker]
-        latest = df.iloc[-1:].copy()
-        
-        text = self._create_text_prompts(latest)[0][0]
-        inputs = self.tokenizer(text, return_tensors="pt", truncation=True)
-        
-        with torch.no_grad():
-            outputs = self.model(**inputs)
-        
-        probs = torch.nn.functional.softmax(outputs.logits, dim=-1)
-        confidence = probs[0][1].item()
-        
-        return {
-            'ticker': ticker,
-            'prediction': 'up' if confidence > 0.5 else 'down',
-            'confidence': confidence,
-            'last_close': float(latest['Close'].iloc[0]),
-            'rsi': float(latest['rsi'].iloc[0]),
-            'sma_10': float(latest['sma_10'].iloc[0]),
-            'ema_50': float(latest['ema_50'].iloc[0])
-        }
-
-    def _create_text_prompts(self, df: pd.DataFrame) -> tuple:
-        texts = []
-        labels = []
-        for _, row in df.iterrows():
-            text = (
-                f"Stock {row['ticker']} at {row.name.date()}: "
-                f"Price ${row['Close']:.2f}, "
-                f"RSI {row['rsi']:.1f}, "
-                f"SMA10 ${row['sma_10']:.2f}, "
-                f"EMA50 ${row['ema_50']:.2f}"
-            )
-            texts.append(text)
-            labels.append(int(row['target']))
-        return texts, labels
-
-predictor = FinancialPredictor(["AAPL", "MSFT", "GOOG", "AMZN", "TSLA", "JPM", "NVDA", "WMT"])
+@app.route('/api/stocks', methods=['GET'])
+def get_supported_stocks():
+    return jsonify({
+        'tickers': SUPPORTED_TICKERS,
+        'risk_levels': list(RISK_LEVELS.keys())
+    })
 
 @app.route('/api/analyze', methods=['GET'])
-def analyze():
+def analyze_stock():
     ticker = request.args.get('ticker', '').upper()
-    if not ticker or ticker not in predictor.tickers:
+    if not ticker or ticker not in SUPPORTED_TICKERS:
         return jsonify({'error': 'Invalid ticker'}), 400
     
     try:
-        prediction = predictor.predict(ticker)
-        stock = yf.Ticker(ticker).info
-        return jsonify({
+        stock = yf.Ticker(ticker)
+        hist = stock.history(period="1mo")
+        info = stock.info
+        
+        # Calculate metrics
+        current_price = hist['Close'].iloc[-1]
+        sma_10 = hist['Close'].rolling(10).mean().iloc[-1]
+        trend = "up" if current_price > sma_10 else "down"
+        confidence = min(0.95, max(0.05, 0.7 if trend == "up" else 0.3))
+        
+        response = {
             'ticker': ticker,
-            'prediction': prediction['prediction'],
-            'confidence': prediction['confidence'],
-            'price': prediction['last_close'],
-            'rsi': prediction['rsi'],
-            'sma_10': prediction['sma_10'],
-            'ema_50': prediction['ema_50'],
-            'pe_ratio': stock.get('trailingPE'),
-            'market_cap': stock.get('marketCap'),
-            'dividend_yield': stock.get('dividendYield')
+            'price': round(current_price, 2),
+            'prediction': trend,
+            'confidence': confidence,
+            'sma_10': round(sma_10, 2),
+            'pe_ratio': info.get('trailingPE'),
+            'dividend_yield': info.get('dividendYield', 0)
+        }
+        
+        # Add investment context
+        if user_profile['available_amount'] > 0:
+            response['shares_possible'] = int(user_profile['available_amount'] / current_price)
+        
+        return jsonify(response)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/recommend', methods=['GET'])
+def recommend_stocks():
+    try:
+        amount = float(request.args.get('amount', user_profile['available_amount']))
+        risk = request.args.get('risk', user_profile['risk_preference'])
+        
+        if risk not in RISK_LEVELS:
+            return jsonify({'error': 'Invalid risk level'}), 400
+            
+        recommendations = []
+        for ticker in RISK_LEVELS[risk]:
+            try:
+                analysis = yf.Ticker(ticker).history(period="1mo")
+                current_price = analysis['Close'].iloc[-1]
+                sma_10 = analysis['Close'].rolling(10).mean().iloc[-1]
+                
+                if current_price > sma_10:  # Simple uptrend detection
+                    confidence = min(0.95, max(0.05, 0.7 + (current_price - sma_10)/sma_10))
+                    shares = int(amount / current_price)
+                    recommendations.append({
+                        'ticker': ticker,
+                        'price': round(current_price, 2),
+                        'confidence': confidence,
+                        'potential_shares': shares
+                    })
+            except:
+                continue
+        
+        # Sort by confidence and take top 3
+        recommendations.sort(key=lambda x: x['confidence'], reverse=True)
+        top_picks = recommendations[:3]
+        
+        if not top_picks:
+            return jsonify({'status': 'no_recommendations'})
+            
+        # Generate allocation plan
+        total_confidence = sum(x['confidence'] for x in top_picks)
+        allocation = []
+        for stock in top_picks:
+            weight = stock['confidence'] / total_confidence
+            allocated = round(amount * weight, 2)
+            shares = int(allocated / stock['price'])
+            allocation.append({
+                'ticker': stock['ticker'],
+                'amount': allocated,
+                'shares': shares,
+                'percentage': round(weight * 100, 1)
+            })
+        
+        return jsonify({
+            'status': 'success',
+            'recommendations': top_picks,
+            'allocation_plan': allocation
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/stocks', methods=['GET'])
-def stocks():
-    return jsonify({'tickers': predictor.tickers})
+@app.route('/api/update_profile', methods=['POST'])
+def update_profile():
+    try:
+        data = request.get_json()
+        user_profile['available_amount'] = float(data.get('amount', 5000.0))
+        user_profile['risk_preference'] = data.get('risk', 'medium')
+        return jsonify({'status': 'profile_updated'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
 
 if __name__ == '__main__':
-    if not predictor.is_trained:
-        predictor.train()
-    app.run(host='0.0.0.0', port=5001, debug=False)
+    app.run(host='0.0.0.0', port=5001, debug=True)
+    
+
+
+
+
+
+
