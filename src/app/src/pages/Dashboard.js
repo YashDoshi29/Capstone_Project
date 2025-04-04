@@ -275,6 +275,7 @@ const Dashboard = () => {
     { name: 'ClassifyBot 💡', path: '/dashboard' },
     { name: 'Optimization', path: '/optimization' },
     { name: 'Investment', path: '/investment' },
+      {name: "Profile", path: "/profile"},
     { name: 'News', path: '/FinancialNews' },
   ];
 
