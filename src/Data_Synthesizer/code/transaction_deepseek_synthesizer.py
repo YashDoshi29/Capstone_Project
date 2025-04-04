@@ -452,7 +452,7 @@ class TransactionGenerator:
                     print(f"Skipping transaction due to error: {e}")
 
                 # Sleep to avoid rate limiting
-                time.sleep(2)
+                time.sleep(10)
 
         # Step 4: Save to CSV
         pd.DataFrame(transactions).to_csv(output_path, index=False)
