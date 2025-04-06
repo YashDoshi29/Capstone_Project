@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Box, AppBar, Toolbar, Typography, Button, Grid, Collapse, Card,CardContent, TextField, List, ListItem, Divider } from "@mui/material";
+import { Box, AppBar, Toolbar, Typography, Button, Grid, Collapse, Card,CardContent, TextField, Divider } from "@mui/material";
 import { Link } from "react-router-dom";
 import { useSpring, animated } from "@react-spring/web";
 import { Fade } from "react-awesome-reveal";
@@ -14,24 +14,24 @@ const BudgetOptimization = () => {
   });
 
   const [userDetails, setUserDetails] = useState({
-    age: "",
     income: "",
-    children: "",
-    maritalStatus: "",
+    
   });
   useEffect(() => {
-    // Clear saved optimization cache on first app load
-    sessionStorage.getItem("appLaunched") || (() => {
+    const appLaunched = sessionStorage.getItem("appLaunched");
+    if (!appLaunched) {
       localStorage.removeItem("savedOptimizations");
       sessionStorage.setItem("appLaunched", "true");
-    })();
+    }
   }, []);
   
 
   const [categorySpending, setCategorySpending] = useState({});
   const [suggestions, setSuggestions] = useState("");
   const [budget, setBudget] = useState(0);
-  const [chatbotResponse, setChatbotResponse] = useState("");
+  const [chatbotResponse, setChatbotResponse] = useState(() => {
+    return localStorage.getItem("chatbotResponse") || "";
+  });
   const [isChatting, setIsChatting] = useState(false);
   const [error, setError] = useState(null);
   const [expandedCard, setExpandedCard] = useState(null); 
@@ -147,8 +147,7 @@ const BudgetOptimization = () => {
     let flaggedCategories = [];
   
     const income = parseFloat(userDetails.income);
-    const children = parseInt(userDetails.children);
-    const maritalStatus = userDetails.maritalStatus.toLowerCase();
+
     const totalSpending = Object.values(categorySpending).reduce((sum, amount) => sum + amount, 0);
 
     if (income < totalSpending) {
@@ -163,14 +162,8 @@ const BudgetOptimization = () => {
 
   
     let adjustedNeedsThreshold = income * 0.50;
-    if (children > 0) adjustedNeedsThreshold += children * 0.02 * income;
-    if (maritalStatus === "married") adjustedNeedsThreshold += 0.05 * income;
-
     let adjustedWantsThreshold = income * 0.30;
-    if (maritalStatus === "single" && children === 0) adjustedWantsThreshold += 0.05 * income;
-
     let adjustedSavingsThreshold = income * 0.20;
-    if (children > 2) adjustedSavingsThreshold -= 0.03 * income;
   
     let totalNeeds = 0;
     let totalWants = 0;
@@ -209,7 +202,7 @@ const BudgetOptimization = () => {
     } else {
       advice += "\n🔔 Consider adjusting your budget to better align with the 50/30/20 rule. By cutting back on non-essential spending and boosting savings, you can achieve a more balanced budget.";
     }
-  
+    
     setSuggestions(advice);  
     getChatbotResponse(flaggedCategories);
   };
@@ -235,24 +228,6 @@ const BudgetOptimization = () => {
   const getChatbotResponse = (flaggedCategories) => {
     if (!validateInputs()) return;
   
-    const generateCacheKey = (userDetails, spending) => {
-      return JSON.stringify({ userDetails, spending });
-    };
-  
-    const cachedResponses = JSON.parse(localStorage.getItem("savedOptimizations") || "{}");
-    const cacheKey = generateCacheKey(userDetails, categorySpending);
-  
-    // ✅ Only return cached if app already launched in this session
-    const appLaunched = sessionStorage.getItem("appLaunched");
-    if (appLaunched && cachedResponses[cacheKey]) {
-      const cached = cachedResponses[cacheKey];
-      setChatbotResponse(cached.response);
-      setEstimatedSavings(cached.average);
-      setSavingsRange(cached.rangeText);
-      return;
-    }
-    setIsChatting(true);
-    setError(null);
   
     let flaggedCategoriesText = flaggedCategories.length > 0
       ? `The user is spending too much in these categories: ${flaggedCategories.join(", ")}. Provide recommendations on reducing expenses in these areas.`
@@ -263,23 +238,25 @@ const BudgetOptimization = () => {
       messages: [
         {
           role: "user",
-          content: `User details: Age: ${userDetails.age}, Income: ${userDetails.income}, Children: ${userDetails.children}, Marital Status: ${userDetails.maritalStatus}.
-  Monthly Spending Breakdown: ${JSON.stringify(categorySpending)} ${flaggedCategoriesText}.
-  
-  Based on the user's demographics and spending, provide personalized budget optimization suggestions. 
-  
-  - In grocery recommendations, include **different store names every time**, selected by you (the assistant), based on affordability and general popularity. Do not repeat the same stores across sessions.
-  
-  - Suggest specific action steps for groceries, shopping, travel, and other overspending areas. Suggest estimated monthly savings based on the user's profile.
-  
-  - Tailor recommendations to lifestyle stage and family size (e.g., saving tips for families with children vs. single young professionals).
-  
-  - Ensure every response is **unique** and uses **varied store names** and examples.
+          content: `User details: Income: ${userDetails.income},
+    Monthly Spending Breakdown: ${JSON.stringify(categorySpending)} ${flaggedCategoriesText}.
+
+    Based on the user's demographics and spending, provide personalized budget optimization suggestions.
+
+    - In grocery recommendations, include **different store names every time**, selected by you (the assistant), based on affordability and general popularity. Do not repeat the same stores across sessions.
+
+    - Suggest specific action steps for groceries, shopping, travel, and other overspending areas. Suggest estimated monthly savings based on the user's profile.
+
+    - Ensure every response is **unique** and uses **varied store names** and examples.
+
+    - Give **Overall Monthly Savings** at the end every time in one line only.
+
+    -- Adjust your focus on savings and spending based on the user's income level.
   
   - Give **Overall Monthly Savings** at the end everytime in one line only.`,
         },
       ],
-      temperature: 0.1,
+      temperature: 0.8,
     };
   
     axios.post(
@@ -287,7 +264,7 @@ const BudgetOptimization = () => {
       requestData,
       {
         headers: {
-          Authorization: `Bearer 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`,
+          Authorization: `Bearer YOUR_API_KEY`,
           "Content-Type": "application/json",
         },
       }
@@ -297,21 +274,12 @@ const BudgetOptimization = () => {
         const text = response.data.choices[0].message.content.trim();
         setChatbotResponse(text);
     
-        // ⬇️ Use new savings extractor
         const { average, rangeText } = extractEstimatedSavings(text);
         if (!isNaN(average)) {
           setEstimatedSavings(average);
           setSavingsRange(rangeText);
           localStorage.setItem("estimatedSavings", average.toString()); 
           localStorage.setItem("chatbotResponse", text); 
-
-          cachedResponses[cacheKey] = {
-            response: text,
-            average,
-            rangeText
-          };
-          localStorage.setItem("savedOptimizations", JSON.stringify(cachedResponses));
-
         }
       } else {
         setChatbotResponse("No response from the model.");
@@ -377,8 +345,7 @@ const BudgetOptimization = () => {
       over: "You may want to review spending in this category.",
     }
   };
-  
-  
+
   const generateSummaryCards = () => {
     return Object.entries(categorySpending).map(([category, amount]) => {
       const isUnderControl = amount <= (parseFloat(userDetails.income) * 0.1);
@@ -623,6 +590,7 @@ const BudgetOptimization = () => {
                   >
                     {isChatting ? "Processing..." : "Optimize Budget"}
                   </Button>
+                  <br></br>
                   {isWarning && !chatbotResponse && (
                     <Typography
                       sx={{
@@ -645,42 +613,57 @@ const BudgetOptimization = () => {
 
                   {error && <Typography color="error">{error}</Typography>}
                   {chatbotResponse && (
-                    <Box sx={{ mt: 3, textAlign: "left" }}>
-                      <Typography variant="h5" sx={{ mb: 1, fontWeight: "bold" }}>
-                        💡 Chatbot Suggestions:
-                      </Typography>
-                      <Divider sx={{ mb: 2, backgroundColor: "white" }} />
+                  <Box
+                    sx={{
+                      padding: 5,
+                      borderRadius: "10px",
+                      background: "radial-gradient(circle, #888888, #444444, #1c1c1c)",
+                      backgroundSize: "200% 200%",
+                      animation: "gradientFlow 15s ease infinite",
+                      position: "relative",            
+                      boxShadow: "0px 6px 12px rgba(0, 0, 0, 0.3)",
+                      marginBottom: "2rem",
+                      textAlign: "center",  
+                    }}
+                  >
+                    <Typography
+                      variant="h5"
+                      sx={{
+                        fontWeight: "bold",
+                        color: "#FFD700", 
+                        mb: 3,  
+                      }}
+                    >
+                      💡 Chatbot Suggestions:
+                    </Typography>
+                    <Divider sx={{backgroundColor: "#FFD700" }} /> {/* More spacing between title and content */}
+                    
+                    <Box
+                      sx={{
+                        fontFamily: "'Roboto', sans-serif",
+                        fontSize: "1rem",
+                        color: "#FFFFFF",  
+                        lineHeight: "1.8",
+                        padding: "2rem",
+                        borderRadius: "8px",
+                        textAlign: "justify",  
+                        display: "block",  
+                        whiteSpace: "pre-line",  
+                        wordWrap: "break-word", 
+                      }}
+                    >
+                      {/* Format titles and bold categories differently */}
+                      <div
+                  dangerouslySetInnerHTML={{
+                    __html: chatbotResponse
+                      
+                      .replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>")  
+                      }}
+                    />
 
-                      {/* Display Full Response */}
-                      <Box sx={{ padding: 3 }}>
-                          <List
-                            sx={{
-                              padding: 5,
-                              borderRadius: "10px",
-                              background: "radial-gradient(circle, #888888, #444444, #1c1c1c)",
-                              backgroundSize: "200% 200%",
-                              animation: "gradientFlow 15s ease infinite",
-                              position: "relative",
-                            }}
-                          >
-                            {chatbotResponse.split("\n").map((line, index) => (
-                              <ListItem key={index} sx={{ display: "flex", alignItems: "center" }}>
-                                {line.includes("✅") && (
-                                  <Typography sx={{ color: "#4CAF50", fontWeight: "bold", mr: 1 }}>✔️</Typography>
-                                )}
-                                {line.includes("⚠️") && (
-                                  <Typography sx={{ color: "#FF9800", fontWeight: "bold", mr: 1 }}>⚠️</Typography>
-                                )}
-                                {line.includes("💡") && (
-                                  <Typography sx={{ color: "#03A9F4", fontWeight: "bold", mr: 1 }}>💡</Typography>
-                                )}
-                                <Typography sx={{ color: "#fff", fontSize: "14px" }}>{line}</Typography>
-                              </ListItem>
-                            ))}
-                          </List>
-                      </Box>
-                    </Box>
-                  )}
+                   </Box>
+                </Box>
+                )}
                   <Grid container spacing={3} justifyContent="center">
                     {suggestions && (generateSummaryCards())}
                   </Grid>
@@ -689,25 +672,34 @@ const BudgetOptimization = () => {
                     variant="h5"
                     sx={{
                       mt: 3,
-                      px: 3,
-                      py: 2,
+                      px: 4,
+                      py: 3,
                       borderRadius: "12px",
-                      color: "#4CAF50",
                       fontWeight: "bold",
                       textAlign: "center",
-                      boxShadow: "0px 4px 12px rgba(0, 0, 0, 0.3)",
+                      boxShadow: "0px 8px 16px rgba(0, 0, 0, 0.2)",
                       width: "fit-content",
                       mx: "auto",
-                      fontSize: "1.25rem",
-                      background: "radial-gradient(circle, #dfffdc, #a6e4a6, #7ed87e)",
-                      backgroundSize: "400% 400%",
+                      fontSize: "1.4rem",
+                      background: "linear-gradient(45deg, #6A1B9A, #00897B, #1E88E5)",
+                      backgroundSize: "300% 300%",
                       animation: "gradientFlow 6s ease infinite",
+                      color: "white",
+                      letterSpacing: "0.5px",
                     }}
                   >
-                    💰 Estimated Monthly Savings: <span style={{ color: "#2e7d32" }}>${estimatedSavings.toFixed(2)}</span>
-                    {savingsRange && <span style={{ color: "#666", fontSize: "0.9rem" }}> ({savingsRange})</span>}
+                    Estimated Monthly Savings: 
+                    <span style={{ color: "#FFD700", fontSize: "1.6rem" }}>
+                      {estimatedSavings.toFixed(2)}
+                    </span>
+                    {savingsRange && (
+                      <span style={{ color: "#CCCCCC", fontSize: "0.95rem" }}>
+                        {" "}({savingsRange})
+                      </span>
+                    )}
                   </Typography>
                 )}
+
 
                   <Typography
                     variant="h5"
@@ -748,7 +740,7 @@ const BudgetOptimization = () => {
       to="/investment"
       state={{ estimatedSavings }}
       variant="contained"
-      color="primary"
+      color="secondary"
       sx={{ padding: "10px 20px" }}
     >
       🧠 Get Financial Advice
