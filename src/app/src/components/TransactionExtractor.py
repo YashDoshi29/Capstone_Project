@@ -41,45 +41,32 @@ class GroqAPI:
             response = requests.post(GROQ_API_URL, json=data, headers=headers)
             response.raise_for_status()
             response_json = response.json()
-
             print("🔍 Full LLM API Response:", response_json)
-
             choices = response_json.get("choices", [])
             if choices and "message" in choices[0]:
                 return choices[0]["message"]["content"].strip()
-
             return ""
-
         except requests.RequestException as e:
             print("❌ LLM API Request Error:", e)
             return ""
 
-
 llm_api = GroqAPI(GROQ_API_KEY, MODEL_NAME)
 
 def extract_text_from_pdf(pdf_bytes, output_filename="extracted_text.txt"):
-    """Extract text from PDF using pdfplumber for text-based PDFs or pytesseract for scanned PDFs.
-    Saves the extracted text to a text file."""
     try:
         with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
             all_text = ""
             for page in pdf.pages:
-                # Extract the text
                 all_text += page.extract_text()
-
-            if all_text.strip():  # Check if text extraction from pdfplumber was successful
+            if all_text.strip():
                 print("Text extracted using pdfplumber.")
             else:
-                # If pdfplumber extraction is empty, use pytesseract for OCR
                 print("No text found using pdfplumber. Falling back to OCR...")
                 images = convert_from_bytes(pdf_bytes)
                 ocr_text = "\n".join([pytesseract.image_to_string(img, config="--psm 6") for img in images])
                 all_text = ocr_text
-
-            # Write the extracted text to a new text file
             with open(output_filename, "w", encoding="utf-8") as output_file:
                 output_file.write(all_text)
-
             print(f"Text successfully written to {output_filename}")
             return all_text
     except Exception as e:
@@ -92,25 +79,18 @@ EXCLUDED_KEYWORDS = [
 ]
 
 def extract_transactions(text):
-    """Robust line-by-line transaction extraction using multiple patterns."""
     transactions = []
-
-    # BoA pattern: MM/DD MM/DD Description State [4-digit block(s)] Amount
     boa_pattern = re.compile(
         r"(\d{2}/\d{2})\s+(\d{2}/\d{2})\s+(.+?)\s+([A-Z]{2})(?:\s+\d{4}){1,2}\s+([-?\d,]+\.\d{2})"
     )
-
     chase_pattern = re.compile(
         r"(\d{2}/\d{2})\s+(.+?)\s+(-?\d+\.\d{2})$"
     )
-
     cleaned_transactions = []
-
     for line in text.splitlines():
         line = line.strip()
         if not line:
             continue
-
         match = boa_pattern.search(line)
         if match:
             posting_date, transaction_date, description, state, amount = match.groups()
@@ -121,18 +101,15 @@ def extract_transactions(text):
                 posting_date = transaction_date
                 state = ""
             else:
-                continue  
-
+                continue
         try:
             amount = float(amount.replace(",", ""))
             if amount < 0:
-                continue  
+                continue
         except ValueError:
             continue
-
         if any(keyword.lower() in description.lower() for keyword in EXCLUDED_KEYWORDS):
             continue
-
         cleaned_transactions.append({
             "Posting Date": posting_date.strip(),
             "Transaction Date": transaction_date.strip(),
@@ -140,14 +117,12 @@ def extract_transactions(text):
             "State": state.strip(),
             "Amount": amount
         })
-
     return pd.DataFrame(cleaned_transactions)
-class CategoryMapper:
 
+class CategoryMapper:
     @staticmethod
     def map_categories(df, llm_api):
-        unique_stores = df["Store"].dropna().unique().tolist()
-
+        unique_descriptions = df["Description"].dropna().unique().tolist()
         prompt = (
         "You are a transaction categorization assistant.\n"
         "Classify ONLY the following store names (provided below) into one of these predefined categories:\n"
@@ -159,23 +134,19 @@ class CategoryMapper:
         "- If a store matches Uber Trip or Lyft, classify it as 'Travel'.\n"
         "- Do not include extra text like 'Store list:' or commentary.\n"
         "- Return only mappings in this format: Store - Category (one per line).\n\n"
-        "Here are the stores:\n" + "\n".join(unique_stores)
+        "Here are the stores:\n" + "\n".join(unique_descriptions)
     )
-
-
         try:
             response = llm_api.query(prompt)
             print("🧠 Raw LLM Response:\n", response)
             mappings = []
             for line in response.split("\n"):
                 if " - " in line:
-                    store, category = map(str.strip, line.split(" - ", 1))
-                    mappings.append({"Transaction": store, "Category": category})
+                    desc, category = map(str.strip, line.split(" - ", 1))
+                    mappings.append({"Description": desc, "Category": category})
         except Exception as e:
             raise RuntimeError("LLM categorization failed") from e
-
         return pd.DataFrame(mappings)
-
 
 class FuzzyMatcher:
     @staticmethod
@@ -185,24 +156,11 @@ class FuzzyMatcher:
 
 class ResponseChecks(BaseModel):
     data: List[str]
-
     @field_validator("data")
     def check(cls, value):
         for item in value:
             assert " - " in item, f"Invalid format: {item}"
         return value
-
-class StoreNameExtractor:
-    @staticmethod
-    def extract_store_names(df):
-        def clean_store_name(description):
-            description = re.sub(r"[^A-Za-z0-9\s\*#&'\-.,]", "", description)  
-            description = re.sub(r"\s{2,}", " ", description).strip()  
-            return description
-
-        df["Store"] = df["Description"].apply(clean_store_name)
-        return df
-
 
 class CreditCardStatementProcessor:
     def __init__(self, file_bytes, file_type, llm_api):
@@ -213,29 +171,22 @@ class CreditCardStatementProcessor:
     def process_pdf(self):
         text = extract_text_from_pdf(self.file_bytes)
         transactions_df = extract_transactions(text)
-
         if transactions_df.empty:
             print("No transactions found.")
             return
-
-        transactions_df = StoreNameExtractor.extract_store_names(transactions_df) 
         transactions_df.to_csv("transactions_with_categories.csv", index=False)
-
         df = pd.read_csv("transactions_with_categories.csv")
         categories_df = CategoryMapper.map_categories(df, self.llm_api)
-
-        df['Fuzzy_Match_Description'] = df['Store'].apply(lambda x: FuzzyMatcher.fuzzy_match(x, categories_df['Transaction'].unique()))
-        df_merged = pd.merge(df, categories_df, left_on='Fuzzy_Match_Description', right_on='Transaction', how='left').drop(columns=['Fuzzy_Match_Description'])
+        df['Fuzzy_Match_Description'] = df['Description'].apply(lambda x: FuzzyMatcher.fuzzy_match(x, categories_df['Description'].unique()))
+        df_merged = pd.merge(df, categories_df, left_on='Fuzzy_Match_Description', right_on='Description', how='left').drop(columns=['Fuzzy_Match_Description'])
         df_merged.drop_duplicates(inplace=True)
         df_merged.to_csv("categorized_transactions.csv", index=False)
 
     def process_csv(self):
         df = pd.read_csv(io.BytesIO(self.file_bytes))
         categories_df = CategoryMapper.map_categories(df, self.llm_api)
-
-        df['Fuzzy_Match_Description'] = df['Store'].apply(lambda x: FuzzyMatcher.fuzzy_match(x, categories_df['Transaction'].unique()))
-        df_merged = pd.merge(df, categories_df, left_on='Fuzzy_Match_Description', right_on='Transaction', how='left').drop(columns=['Fuzzy_Match_Description'])
-
+        df['Fuzzy_Match_Description'] = df['Description'].apply(lambda x: FuzzyMatcher.fuzzy_match(x, categories_df['Description'].unique()))
+        df_merged = pd.merge(df, categories_df, left_on='Fuzzy_Match_Description', right_on='Description', how='left').drop(columns=['Fuzzy_Match_Description'])
         df_merged.to_csv("categorized_transactions.csv", index=False)
 
     def process(self):
@@ -252,12 +203,10 @@ def upload_file():
         if "file" not in request.files:
             print("❌ No file part in request")
             return jsonify({"error": "No file part"}), 400
-
         file = request.files["file"]
         if file.filename == "":
             print("❌ No selected file")
             return jsonify({"error": "No selected file"}), 400
-
         file_extension = file.filename.split('.')[-1].lower()
         if file_extension == "pdf":
             file_type = "pdf"
@@ -265,16 +214,12 @@ def upload_file():
             file_type = "csv"
         else:
             return jsonify({"error": "Unsupported file type"}), 400
-
         print(f"✅ File uploaded: {file.filename}")
         file_bytes = file.read()
-
         processor = CreditCardStatementProcessor(file_bytes, file_type, llm_api)
         processor.process()
-
         with open("categorized_transactions.csv", "r") as f:
             return Response(f.read(), content_type="text/csv")
-
     except Exception as e:
         print("❌ Server Error:", e)
         return jsonify({"error": "Internal Server Error", "details": str(e)}), 500
