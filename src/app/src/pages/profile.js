@@ -7,12 +7,15 @@ const Profile = () => {
     gender: '',
     householdSize: '',
     annualIncome: '',
+    zipcode: '',
   });
   const [selectedFile, setSelectedFile] = useState(null);
+  const [transactions, setTransactions] = useState([]); // State to store transaction data
 
   // Handle switching between modes
   const handleModeChange = (newMode) => {
     setMode(newMode);
+    setTransactions([]); // Clear previously loaded transactions if any
   };
 
   // Update form field values
@@ -27,24 +30,58 @@ const Profile = () => {
   };
 
   // Handle form submission for either mode
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (mode === 'generate') {
-      const { age, gender, householdSize, annualIncome } = userData;
-      if (!age || !gender || !householdSize || !annualIncome) {
-        alert("Please fill in all fields.");
-        return;
-      }
-      alert(`Generating transaction data using:
-Age: ${age}, Gender: ${gender}, Household Size: ${householdSize}, Annual Income: ${annualIncome}`);
-    } else if (mode === 'upload') {
-      if (!selectedFile) {
-        alert("Please select a file to upload.");
-        return;
-      }
-      alert(`Uploading file: ${selectedFile.name}`);
+  // Handle form submission for either mode
+const handleSubmit = async (e) => {
+  e.preventDefault();
+
+  if (mode === 'generate') {
+    const { age, gender, householdSize, annualIncome, zipcode } = userData;
+    if (!age || !gender || !householdSize || !annualIncome || !zipcode) {
+      alert("Please fill in all fields.");
+      return;
     }
-  };
+
+    try {
+      const response = await fetch("http://localhost:8000/generate", {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          age: Number(age),
+          gender,
+          household_size: Number(householdSize),
+          income: Number(annualIncome),
+          zipcode
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error("Network response was not ok");
+      }
+
+      const data = await response.json();
+      console.log("Data returned:", data);  // Check the structure in the console
+
+      // Update state based on expected structure
+      if (data.transactions && Array.isArray(data.transactions)) {
+        setTransactions(data.transactions);
+      } else if (Array.isArray(data)) {
+        setTransactions(data);
+      } else {
+        console.error("Unexpected data format:", data);
+      }
+    } catch (error) {
+      console.error("Error generating transaction data:", error);
+    }
+  } else if (mode === 'upload') {
+    if (!selectedFile) {
+      alert("Please select a file to upload.");
+      return;
+    }
+    alert(`Uploading file: ${selectedFile.name}`);
+  }
+};
 
   // Inline styling for a dark theme with white accents
   const containerStyle = {
@@ -165,12 +202,49 @@ Age: ${age}, Gender: ${gender}, Household Size: ${householdSize}, Annual Income:
               onChange={handleInputChange}
               style={inputStyle}
             />
+            <input
+              type="text"
+              name="zipcode"
+              placeholder="Zipcode"
+              value={userData.zipcode}
+              onChange={handleInputChange}
+              style={inputStyle}
+            />
           </>
         )}
         <button type="submit" style={submitButtonStyle}>
           {mode === 'upload' ? 'Upload File' : 'Generate Data'}
         </button>
       </form>
+
+      {/* Transaction Data Table */}
+{transactions && transactions.length > 0 && (
+  <div style={{ marginTop: '40px' }}>
+    <h2 style={{ textAlign: 'center' }}>Transaction Data</h2>
+    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+      <thead>
+        <tr>
+          {Object.keys(transactions[0]).map((key) => (
+            <th key={key} style={{ border: '1px solid #fff', padding: '8px' }}>
+              {key}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {transactions.map((transaction, index) => (
+          <tr key={index}>
+            {Object.values(transaction).map((value, i) => (
+              <td key={i} style={{ border: '1px solid #fff', padding: '8px' }}>
+                {typeof value === 'object' && value !== null ? JSON.stringify(value) : value}
+              </td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+)}
     </div>
   );
 };

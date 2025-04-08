@@ -10,6 +10,7 @@ from config import API_KEY_Groq
 from pydantic import BaseModel
 from fastapi import FastAPI, HTTPException
 import os
+from fastapi.middleware.cors import CORSMiddleware
 
 path = os.path.dirname(os.path.abspath(__file__))
 df_path = os.path.join(path, "..", "data", "dc_businesses_cleaned.csv")
@@ -420,6 +421,15 @@ class TransactionGenerator:
 
 # FastAPI Setup
 app = FastAPI()
+
+# Allow frontend to talk to the API
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Change "*" to your frontend domain in production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 class UserInput(BaseModel):
     age: int
