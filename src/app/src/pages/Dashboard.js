@@ -3,7 +3,6 @@ import { Box, Typography, AppBar, Toolbar, Button, Grid, Card, CardContent} from
 import { Link } from "react-router-dom";
 import { useSpring, animated } from "@react-spring/web";
 import { Fade } from "react-awesome-reveal";
-import Papa from "papaparse";
 import {PieChart, Pie, Cell,RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,Tooltip, Legend,ResponsiveContainer, Sector} from "recharts";
 
 const COLORS = [
@@ -42,14 +41,12 @@ const Dashboard = () => {
   const [chartType, setChartType] = useState("radar");
 
   useEffect(() => {
-    // Clear charts & data on very first launch (page refresh or hard reload)
     if (!sessionStorage.getItem("dashboardLaunched")) {
       localStorage.removeItem("transactions");
       localStorage.removeItem("categorizedSpending");
       sessionStorage.setItem("dashboardLaunched", "true");
     }
   
-    // Load saved transactions (if any)
     const savedTransactions = localStorage.getItem("transactions");
     if (savedTransactions) {
       setTransactions(JSON.parse(savedTransactions));
@@ -61,36 +58,32 @@ const Dashboard = () => {
     setFile(event.target.files[0]);
   };
 
-  const parseCSV = (csvData) => {
-    return new Promise((resolve, reject) => {
-      Papa.parse(csvData, {
-        header: true,
-        skipEmptyLines: true,
-        complete: (result) => resolve(result.data),
-        error: (error) => reject(error),
-      });
-    });
-  };
 
   const parsePDF = async (pdfFile) => {
     setLoading(true);
     setError("");
-
     const formData = new FormData();
     formData.append("file", pdfFile);
-
     try {
       const response = await fetch("http://127.0.0.1:5050/upload", {
         method: "POST",
         body: formData,
       });
-
       if (!response.ok) throw new Error("Error uploading PDF.");
-
       const pdfText = await response.text();
-      const parsedTransactions = await parseCSV(pdfText);
-      const formattedTransactions = formatTransactions(parsedTransactions);
-      saveTransactions(formattedTransactions);
+      const parsed = await new Response(new Blob([pdfText])).text();
+      const lines = parsed.trim().split("\n");
+      const headers = lines[0].split(",");
+      const transactions = lines.slice(1).map(line => {
+        const values = line.split(",");
+        const obj = {};
+        headers.forEach((h, i) => {
+          obj[h] = values[i];
+        });
+        return obj;
+      });
+      const formatted = formatTransactions(transactions);
+      saveTransactions(formatted);
     } catch (error) {
       console.error("Upload failed:", error);
       setError("Please upload the file again: " + error.message);
@@ -122,26 +115,11 @@ const Dashboard = () => {
 
   const handleUpload = async () => {
     if (!file) return setError("Please select a file first.");
-    setLoading(true);
-    setError("");
-
-    try {
-      if (file.type === "text/csv") {
-        const csvText = await file.text();
-        const parsedTransactions = await parseCSV(csvText);
-        const formattedTransactions = formatTransactions(parsedTransactions);
-        saveTransactions(formattedTransactions);
-      } else if (file.type === "application/pdf") {
-        await parsePDF(file);
-      } else {
-        setError("Unsupported file type. Please upload a CSV or PDF.");
-      }
-    } catch (error) {
-      console.error("Upload error:", error);
-      setError("Please upload the file again: " + error.message);
-    } finally {
-      setLoading(false);
+    if (file.type !== "application/pdf") {
+      setError("Unsupported file type. Please upload a PDF only.");
+      return;
     }
+    await parsePDF(file);
   };
 
   const categoryData = transactions.reduce((acc, transaction) => {
@@ -608,7 +586,7 @@ const Dashboard = () => {
               fontWeight: "bold",
               fontSize: "1.25rem",
               textShadow: "0 1px 4px rgba(0,0,0,0.6)",
-              fontFamily: "'Poppins', sans-serif", // ✔️ Modern, readable, and elegant
+              fontFamily: "'Poppins', sans-serif", 
             }}
           >
             Your Next Step 🚀
@@ -622,7 +600,7 @@ const Dashboard = () => {
               WebkitBackgroundClip: "text",
               WebkitTextFillColor: "transparent",
               fontWeight: 500,
-              fontFamily: "'Poppins', sans-serif", // Use same modern font
+              fontFamily: "'Poppins', sans-serif", 
               textShadow: "0 1px 2px rgba(0,0,0,0.3)",
             }}
           >
@@ -674,11 +652,11 @@ const Dashboard = () => {
         variant="contained"
         sx={{
           padding: "12px 28px",
-          borderRadius: "999px", // pill shape
+          borderRadius: "999px", 
           fontWeight: "bold",
           fontSize: "1rem",
           textTransform: "uppercase",
-          background: "linear-gradient(135deg, #6a5acd, #4f9df7)", // purple to blue gradient
+          background: "linear-gradient(135deg, #6a5acd, #4f9df7)", 
           boxShadow: "0 4px 12px rgba(79, 157, 247, 0.3)",
           transition: "all 0.3s ease-in-out",
           "&:hover": {

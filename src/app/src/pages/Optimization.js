@@ -256,7 +256,7 @@ const BudgetOptimization = () => {
   - Give **Overall Monthly Savings** at the end everytime in one line only.`,
         },
       ],
-      temperature: 0.8,
+      temperature: 0.9,
     };
   
     axios.post(
