@@ -49,6 +49,14 @@
 # print(generated_text)
 
 
+
+
+
+
+
+
+
+
 # import requests
 # import pandas as pd
 # from datasets import Dataset
@@ -130,6 +138,17 @@
 # # Decode the output to get the answer
 # decoded_output = tokenizer.decode(outputs[0], skip_special_tokens=True)
 # print(decoded_output)
+
+
+
+
+
+
+
+
+
+
+
 
 
 # import requests
@@ -268,6 +287,14 @@
 # query = "What is the closing price of AAPL on 2025-02-07?"
 # answer = query_stock_data(query)
 # print(answer)
+
+
+
+
+
+
+
+
 
 
 # import requests
@@ -437,6 +464,14 @@
 # print(stock_data)
 
 
+
+
+
+
+
+
+
+
 # import requests
 # import openai
 
@@ -520,6 +555,13 @@
 #         print("Error: Weekly stock data not available or 'Weekly Adjusted Time Series' missing.")
 
 
+
+
+
+
+
+
+
 # import requests
 # import pandas as pd
 # from transformers import pipeline
@@ -599,6 +641,16 @@
 #     print(f"Answer: {answer}")
 # else:
 #     print("Error: Stock data not available.")
+
+
+
+
+
+
+
+
+
+
 
 
 import requests
