@@ -4,7 +4,7 @@
 # from rapidfuzz import process, fuzz
 
 # # --- API Keys ---
-# ALPHA_VANTAGE_API_KEY = 'O30LC68NVP5U8YSQ'  # Alpha Vantage API Key
+# ALPHA_VANTAGE_API_KEY = 'your API key'  # Alpha Vantage API Key
 
 # # ============================
 # # COMPONENTS
@@ -119,6 +119,17 @@
 
 # if __name__ == '__main__':
 #     app.run(debug=True)  
+
+
+
+
+
+
+
+
+
+
+
 
 # import os
 # import requests
@@ -524,6 +535,13 @@
 #     app_instance.run()
 #     app.run(debug=True)
 
+
+
+
+
+
+
+
 # import os
 # import requests
 # from flask import Flask, jsonify, request
@@ -669,6 +687,171 @@
 #     app_instance = FinancialQAApp()
 #     app_instance.run()
 #     app.run(debug=True)
+
+
+
+
+
+
+
+
+# import os
+# import requests
+# from flask import Flask, jsonify, request
+# import logging
+# from flask_cors import CORS  # Import CORS to enable cross-origin requests
+
+# # Disable tokenizers parallelism warning
+# os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+# # Initialize the Flask app
+# app = Flask(__name__)
+
+# # Enable CORS for all routes
+# CORS(app)
+
+# # Set up logging
+# logging.basicConfig(level=logging.DEBUG)
+
+# # Replace with your own Alpha Vantage API key
+# ALPHA_VANTAGE_API_KEY = 'YOUR_API_KEY'
+
+
+# # =======================
+# # Component 1: DataFetcherComponent
+# # =======================
+# class DataFetcherComponent:
+#     def __init__(self):
+#         self.url = "https://www.alphavantage.co/query"
+#         logging.info("DataFetcherComponent initialized")
+
+#     def fetch_real_time_stock_data(self, symbol):
+#         """
+#         Fetches real-time stock data for any stock symbol from Alpha Vantage API.
+
+#         Args:
+#             symbol (str): The stock symbol (e.g., AAPL, TSLA).
+
+#         Returns:
+#             dict: Stock data in JSON format.
+#         """
+#         logging.debug(f"Fetching real-time stock data for symbol: {symbol}")
+#         params = {
+#             'function': 'GLOBAL_QUOTE',  # 'GLOBAL_QUOTE' gets the latest data for a stock
+#             'symbol': symbol,            # Stock symbol entered by the user (e.g., AAPL, TSLA)
+#             'apikey': ALPHA_VANTAGE_API_KEY            
+#         }
+
+#         try:
+#             response = requests.get(self.url, params=params)
+#             response.raise_for_status()  # Will raise an HTTPError for bad responses (4xx or 5xx)
+#             logging.info(f"Successfully fetched stock data for {symbol}")
+#             return response.json()  # Return the data in JSON format
+#         except requests.exceptions.HTTPError as err:
+#             logging.error(f"HTTP error occurred: {err}")
+#         except Exception as err:
+#             logging.error(f"An error occurred: {err}")
+#         return None
+
+
+# # =======================
+# # Component 2: QueryHandlerComponent
+# # =======================
+# class QueryHandlerComponent:
+#     def __init__(self, data_fetcher):
+#         logging.info("QueryHandlerComponent initialized")
+#         self.data_fetcher = data_fetcher
+
+#     def handle_query(self, user_query):
+#         """Handles the user query and returns the most relevant stock data."""
+#         if not user_query:
+#             return {"error": "No query parameter provided."}, 400  # Ensure two values are returned
+
+#         stock_symbol = user_query.strip().upper()  # Makes the input uppercase
+#         logging.debug(f"Handling query for stock symbol: {stock_symbol}")
+
+#         # Fetch the stock data
+#         stock_data = self.data_fetcher.fetch_real_time_stock_data(stock_symbol)
+#         logging.debug(f"Fetched stock data: {stock_data}")
+
+#         if stock_data:
+#             # Extract the stock data directly from the API response
+#             global_quote = stock_data.get('Global Quote', {})
+#             if global_quote:
+#                 response = {
+#                     "symbol": global_quote.get('01. symbol', 'N/A'),
+#                     "open": global_quote.get('02. open', 'N/A'),
+#                     "high": global_quote.get('03. high', 'N/A'),
+#                     "low": global_quote.get('04. low', 'N/A'),
+#                     "price": global_quote.get('05. price', 'N/A'),
+#                     "volume": global_quote.get('06. volume', 'N/A'),
+#                     "latest_trading_day": global_quote.get('07. latest trading day', 'N/A'),
+#                     "previous_close": global_quote.get('08. previous close', 'N/A'),
+#                     "change": global_quote.get('09. change', 'N/A'),
+#                     "change_percent": global_quote.get('10. change percent', 'N/A')
+#                 }
+#                 return jsonify(response), 200  # Return stock data as JSON
+#             else:
+#                 logging.error("No 'Global Quote' data found in the response.")
+#                 return {"error": "Unable to fetch valid stock data."}, 500
+#         else:
+#             logging.error("Unable to fetch stock data.")
+#             return {"error": "Unable to fetch stock data."}, 500  # Return error response
+
+
+# # =======================
+# # Component 3: FinancialQAApp (Main app)
+# # =======================
+# class FinancialQAApp:
+#     def __init__(self):
+#         logging.info("FinancialQAApp initialized")
+#         # Initialize all components
+#         self.data_fetcher = DataFetcherComponent()
+#         self.query_handler = QueryHandlerComponent(self.data_fetcher)
+
+#     def run(self):
+#         """
+#         Runs the Flask app and sets up the route for query handling.
+#         """
+#         logging.debug("Setting up query route...")
+
+#         # Route for handling queries about stock prices/trends
+#         @app.route('/api/financial-qa', methods=['GET'])
+#         def query():
+#             user_query = request.args.get('query')  # Retrieve the query from the request
+#             logging.debug(f"Received query: {user_query}")  # Log the query
+
+#             if user_query:
+#                 logging.debug("Processing query...")
+#                 response, status_code = self.query_handler.handle_query(user_query)  # This will unpack correctly now
+#                 logging.debug(f"Response: {response}")
+#                 return response, status_code
+#             else:
+#                 logging.warning("No query parameter provided.")
+#                 return jsonify({"error": "No query parameter provided."}), 400
+
+#         # Root route for the app, returning a simple welcome message
+#         @app.route('/')
+#         def home():
+#             return "Welcome to the Financial QA API!"  # Custom message for the root
+
+
+# # =======================
+# # Main Execution
+# # =======================
+# if __name__ == '__main__':
+#     logging.info("Starting Financial QA App")
+#     app_instance = FinancialQAApp()
+#     app_instance.run()
+#     app.run(debug=True)
+
+
+
+
+
+
+
+
 
 
 # import os
@@ -827,158 +1010,6 @@
 
 
 
-
-
-
-# import os
-# import requests
-# from flask import Flask, jsonify, request
-# import logging
-# from flask_cors import CORS  # Import CORS to enable cross-origin requests
-
-# # Disable tokenizers parallelism warning
-# os.environ["TOKENIZERS_PARALLELISM"] = "false"
-
-# # Initialize the Flask app
-# app = Flask(__name__)
-
-# # Enable CORS for all routes
-# CORS(app)
-
-# # Set up logging
-# logging.basicConfig(level=logging.DEBUG)
-
-# # Replace with your own Alpha Vantage API key
-# ALPHA_VANTAGE_API_KEY = 'YOUR_API_KEY'
-
-
-# # =======================
-# # Component 1: DataFetcherComponent
-# # =======================
-# class DataFetcherComponent:
-#     def __init__(self):
-#         self.url = "https://www.alphavantage.co/query"
-#         logging.info("DataFetcherComponent initialized")
-
-#     def fetch_real_time_stock_data(self, symbol):
-#         """
-#         Fetches real-time stock data for any stock symbol from Alpha Vantage API.
-
-#         Args:
-#             symbol (str): The stock symbol (e.g., AAPL, TSLA).
-
-#         Returns:
-#             dict: Stock data in JSON format.
-#         """
-#         logging.debug(f"Fetching real-time stock data for symbol: {symbol}")
-#         params = {
-#             'function': 'GLOBAL_QUOTE',  # 'GLOBAL_QUOTE' gets the latest data for a stock
-#             'symbol': symbol,            # Stock symbol entered by the user (e.g., AAPL, TSLA)
-#             'apikey': ALPHA_VANTAGE_API_KEY            
-#         }
-
-#         try:
-#             response = requests.get(self.url, params=params)
-#             response.raise_for_status()  # Will raise an HTTPError for bad responses (4xx or 5xx)
-#             logging.info(f"Successfully fetched stock data for {symbol}")
-#             return response.json()  # Return the data in JSON format
-#         except requests.exceptions.HTTPError as err:
-#             logging.error(f"HTTP error occurred: {err}")
-#         except Exception as err:
-#             logging.error(f"An error occurred: {err}")
-#         return None
-
-
-# # =======================
-# # Component 2: QueryHandlerComponent
-# # =======================
-# class QueryHandlerComponent:
-#     def __init__(self, data_fetcher):
-#         logging.info("QueryHandlerComponent initialized")
-#         self.data_fetcher = data_fetcher
-
-#     def handle_query(self, user_query):
-#         """Handles the user query and returns the most relevant stock data."""
-#         if not user_query:
-#             return {"error": "No query parameter provided."}, 400  # Ensure two values are returned
-
-#         stock_symbol = user_query.strip().upper()  # Makes the input uppercase
-#         logging.debug(f"Handling query for stock symbol: {stock_symbol}")
-
-#         # Fetch the stock data
-#         stock_data = self.data_fetcher.fetch_real_time_stock_data(stock_symbol)
-#         logging.debug(f"Fetched stock data: {stock_data}")
-
-#         if stock_data:
-#             # Extract the stock data directly from the API response
-#             global_quote = stock_data.get('Global Quote', {})
-#             if global_quote:
-#                 response = {
-#                     "symbol": global_quote.get('01. symbol', 'N/A'),
-#                     "open": global_quote.get('02. open', 'N/A'),
-#                     "high": global_quote.get('03. high', 'N/A'),
-#                     "low": global_quote.get('04. low', 'N/A'),
-#                     "price": global_quote.get('05. price', 'N/A'),
-#                     "volume": global_quote.get('06. volume', 'N/A'),
-#                     "latest_trading_day": global_quote.get('07. latest trading day', 'N/A'),
-#                     "previous_close": global_quote.get('08. previous close', 'N/A'),
-#                     "change": global_quote.get('09. change', 'N/A'),
-#                     "change_percent": global_quote.get('10. change percent', 'N/A')
-#                 }
-#                 return jsonify(response), 200  # Return stock data as JSON
-#             else:
-#                 logging.error("No 'Global Quote' data found in the response.")
-#                 return {"error": "Unable to fetch valid stock data."}, 500
-#         else:
-#             logging.error("Unable to fetch stock data.")
-#             return {"error": "Unable to fetch stock data."}, 500  # Return error response
-
-
-# # =======================
-# # Component 3: FinancialQAApp (Main app)
-# # =======================
-# class FinancialQAApp:
-#     def __init__(self):
-#         logging.info("FinancialQAApp initialized")
-#         # Initialize all components
-#         self.data_fetcher = DataFetcherComponent()
-#         self.query_handler = QueryHandlerComponent(self.data_fetcher)
-
-#     def run(self):
-#         """
-#         Runs the Flask app and sets up the route for query handling.
-#         """
-#         logging.debug("Setting up query route...")
-
-#         # Route for handling queries about stock prices/trends
-#         @app.route('/api/financial-qa', methods=['GET'])
-#         def query():
-#             user_query = request.args.get('query')  # Retrieve the query from the request
-#             logging.debug(f"Received query: {user_query}")  # Log the query
-
-#             if user_query:
-#                 logging.debug("Processing query...")
-#                 response, status_code = self.query_handler.handle_query(user_query)  # This will unpack correctly now
-#                 logging.debug(f"Response: {response}")
-#                 return response, status_code
-#             else:
-#                 logging.warning("No query parameter provided.")
-#                 return jsonify({"error": "No query parameter provided."}), 400
-
-#         # Root route for the app, returning a simple welcome message
-#         @app.route('/')
-#         def home():
-#             return "Welcome to the Financial QA API!"  # Custom message for the root
-
-
-# # =======================
-# # Main Execution
-# # =======================
-# if __name__ == '__main__':
-#     logging.info("Starting Financial QA App")
-#     app_instance = FinancialQAApp()
-#     app_instance.run()
-#     app.run(debug=True)
 
 # from flask import Flask, jsonify, request
 # from flask_cors import CORS  # Import CORS to allow cross-origin requests
@@ -996,7 +1027,7 @@
 
 # logging.basicConfig(level=logging.DEBUG)
 
-# ALPHA_VANTAGE_API_KEY = 'O30LC68NVP5U8YSQ'
+# ALPHA_VANTAGE_API_KEY = 'your API key'
 
 
 # class DataFetcherComponent:
@@ -1307,143 +1338,303 @@
 
 #NEMI
 
-from flask import Flask, request, jsonify
-from flask_cors import CORS
-import yfinance as yf
-import numpy as np
-from datetime import datetime
-import logging
+# from flask import Flask, request, jsonify
+# from flask_cors import CORS
+# import yfinance as yf
+# import numpy as np
+# from datetime import datetime
+# import logging
 
-app = Flask(__name__)
-CORS(app)  # Enable CORS for all routes
+# app = Flask(__name__)
+# CORS(app)  # Enable CORS for all routes
 
-# Configuration
-SUPPORTED_TICKERS = ["AAPL", "MSFT", "GOOG", "AMZN", "TSLA", "JPM", "NVDA", "WMT"]
-RISK_LEVELS = {
-    'low': ['JPM', 'WMT'],       # Stable blue-chip stocks
-    'medium': ['AAPL', 'MSFT'],  # Balanced growth
-    'high': ['TSLA', 'NVDA']     # High-growth tech
-}
+# # Configuration
+# SUPPORTED_TICKERS = ["AAPL", "MSFT", "GOOG", "AMZN", "TSLA", "JPM", "NVDA", "WMT"]
+# RISK_LEVELS = {
+#     'low': ['JPM', 'WMT'],       # Stable blue-chip stocks
+#     'medium': ['AAPL', 'MSFT'],  # Balanced growth
+#     'high': ['TSLA', 'NVDA']     # High-growth tech
+# }
 
-# In-memory storage
-user_profile = {
-    'available_amount': 5000.0,
-    'risk_preference': 'medium'
-}
+# # In-memory storage
+# user_profile = {
+#     'available_amount': 5000.0,
+#     'risk_preference': 'medium'
+# }
 
-@app.route('/api/stocks', methods=['GET'])
-def get_supported_stocks():
-    return jsonify({
-        'tickers': SUPPORTED_TICKERS,
-        'risk_levels': list(RISK_LEVELS.keys())
-    })
+# @app.route('/api/stocks', methods=['GET'])
+# def get_supported_stocks():
+#     return jsonify({
+#         'tickers': SUPPORTED_TICKERS,
+#         'risk_levels': list(RISK_LEVELS.keys())
+#     })
 
-@app.route('/api/analyze', methods=['GET'])
-def analyze_stock():
-    ticker = request.args.get('ticker', '').upper()
-    if not ticker or ticker not in SUPPORTED_TICKERS:
-        return jsonify({'error': 'Invalid ticker'}), 400
+# @app.route('/api/analyze', methods=['GET'])
+# def analyze_stock():
+#     ticker = request.args.get('ticker', '').upper()
+#     if not ticker or ticker not in SUPPORTED_TICKERS:
+#         return jsonify({'error': 'Invalid ticker'}), 400
     
-    try:
-        stock = yf.Ticker(ticker)
-        hist = stock.history(period="1mo")
-        info = stock.info
+#     try:
+#         stock = yf.Ticker(ticker)
+#         hist = stock.history(period="1mo")
+#         info = stock.info
         
-        # Calculate metrics
-        current_price = hist['Close'].iloc[-1]
-        sma_10 = hist['Close'].rolling(10).mean().iloc[-1]
-        trend = "up" if current_price > sma_10 else "down"
-        confidence = min(0.95, max(0.05, 0.7 if trend == "up" else 0.3))
+#         # Calculate metrics
+#         current_price = hist['Close'].iloc[-1]
+#         sma_10 = hist['Close'].rolling(10).mean().iloc[-1]
+#         trend = "up" if current_price > sma_10 else "down"
+#         confidence = min(0.95, max(0.05, 0.7 if trend == "up" else 0.3))
         
-        response = {
-            'ticker': ticker,
-            'price': round(current_price, 2),
-            'prediction': trend,
-            'confidence': confidence,
-            'sma_10': round(sma_10, 2),
-            'pe_ratio': info.get('trailingPE'),
-            'dividend_yield': info.get('dividendYield', 0)
-        }
+#         response = {
+#             'ticker': ticker,
+#             'price': round(current_price, 2),
+#             'prediction': trend,
+#             'confidence': confidence,
+#             'sma_10': round(sma_10, 2),
+#             'pe_ratio': info.get('trailingPE'),
+#             'dividend_yield': info.get('dividendYield', 0)
+#         }
         
-        # Add investment context
-        if user_profile['available_amount'] > 0:
-            response['shares_possible'] = int(user_profile['available_amount'] / current_price)
+#         # Add investment context
+#         if user_profile['available_amount'] > 0:
+#             response['shares_possible'] = int(user_profile['available_amount'] / current_price)
         
-        return jsonify(response)
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+#         return jsonify(response)
+#     except Exception as e:
+#         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/recommend', methods=['GET'])
-def recommend_stocks():
-    try:
-        amount = float(request.args.get('amount', user_profile['available_amount']))
-        risk = request.args.get('risk', user_profile['risk_preference'])
+# @app.route('/api/recommend', methods=['GET'])
+# def recommend_stocks():
+#     try:
+#         amount = float(request.args.get('amount', user_profile['available_amount']))
+#         risk = request.args.get('risk', user_profile['risk_preference'])
         
-        if risk not in RISK_LEVELS:
-            return jsonify({'error': 'Invalid risk level'}), 400
+#         if risk not in RISK_LEVELS:
+#             return jsonify({'error': 'Invalid risk level'}), 400
             
-        recommendations = []
-        for ticker in RISK_LEVELS[risk]:
-            try:
-                analysis = yf.Ticker(ticker).history(period="1mo")
-                current_price = analysis['Close'].iloc[-1]
-                sma_10 = analysis['Close'].rolling(10).mean().iloc[-1]
+#         recommendations = []
+#         for ticker in RISK_LEVELS[risk]:
+#             try:
+#                 analysis = yf.Ticker(ticker).history(period="1mo")
+#                 current_price = analysis['Close'].iloc[-1]
+#                 sma_10 = analysis['Close'].rolling(10).mean().iloc[-1]
                 
-                if current_price > sma_10:  # Simple uptrend detection
-                    confidence = min(0.95, max(0.05, 0.7 + (current_price - sma_10)/sma_10))
-                    shares = int(amount / current_price)
-                    recommendations.append({
-                        'ticker': ticker,
-                        'price': round(current_price, 2),
-                        'confidence': confidence,
-                        'potential_shares': shares
-                    })
-            except:
-                continue
+#                 if current_price > sma_10:  # Simple uptrend detection
+#                     confidence = min(0.95, max(0.05, 0.7 + (current_price - sma_10)/sma_10))
+#                     shares = int(amount / current_price)
+#                     recommendations.append({
+#                         'ticker': ticker,
+#                         'price': round(current_price, 2),
+#                         'confidence': confidence,
+#                         'potential_shares': shares
+#                     })
+#             except:
+#                 continue
         
-        # Sort by confidence and take top 3
-        recommendations.sort(key=lambda x: x['confidence'], reverse=True)
-        top_picks = recommendations[:3]
+#         # Sort by confidence and take top 3
+#         recommendations.sort(key=lambda x: x['confidence'], reverse=True)
+#         top_picks = recommendations[:3]
         
-        if not top_picks:
-            return jsonify({'status': 'no_recommendations'})
+#         if not top_picks:
+#             return jsonify({'status': 'no_recommendations'})
             
-        # Generate allocation plan
-        total_confidence = sum(x['confidence'] for x in top_picks)
-        allocation = []
-        for stock in top_picks:
-            weight = stock['confidence'] / total_confidence
-            allocated = round(amount * weight, 2)
-            shares = int(allocated / stock['price'])
-            allocation.append({
-                'ticker': stock['ticker'],
-                'amount': allocated,
-                'shares': shares,
-                'percentage': round(weight * 100, 1)
-            })
+#         # Generate allocation plan
+#         total_confidence = sum(x['confidence'] for x in top_picks)
+#         allocation = []
+#         for stock in top_picks:
+#             weight = stock['confidence'] / total_confidence
+#             allocated = round(amount * weight, 2)
+#             shares = int(allocated / stock['price'])
+#             allocation.append({
+#                 'ticker': stock['ticker'],
+#                 'amount': allocated,
+#                 'shares': shares,
+#                 'percentage': round(weight * 100, 1)
+#             })
         
-        return jsonify({
-            'status': 'success',
-            'recommendations': top_picks,
-            'allocation_plan': allocation
-        })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+#         return jsonify({
+#             'status': 'success',
+#             'recommendations': top_picks,
+#             'allocation_plan': allocation
+#         })
+#     except Exception as e:
+#         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/update_profile', methods=['POST'])
-def update_profile():
-    try:
-        data = request.get_json()
-        user_profile['available_amount'] = float(data.get('amount', 5000.0))
-        user_profile['risk_preference'] = data.get('risk', 'medium')
-        return jsonify({'status': 'profile_updated'})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 400
+# @app.route('/api/update_profile', methods=['POST'])
+# def update_profile():
+#     try:
+#         data = request.get_json()
+#         user_profile['available_amount'] = float(data.get('amount', 5000.0))
+#         user_profile['risk_preference'] = data.get('risk', 'medium')
+#         return jsonify({'status': 'profile_updated'})
+#     except Exception as e:
+#         return jsonify({'error': str(e)}), 400
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5001, debug=True)
+# if __name__ == '__main__':
+#     app.run(host='0.0.0.0', port=5001, debug=True)
     
 
+
+
+
+
+
+import json
+import time
+from bs4 import BeautifulSoup
+import re
+import requests
+import openai
+openai.api_key = OPENAI_API_KEY
+from langchain_community.llms import OpenAI as LangchainOpenAI
+import yfinance as yf
+import warnings
+import os
+
+warnings.filterwarnings("ignore")
+OPENAI_API_KEY = "your API key"  # Replace with your actual key
+os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
+
+# Initialize OpenAI client
+client = OpenAI(api_key=OPENAI_API_KEY)
+
+# Initialize LangChain LLM
+llm = LangchainOpenAI(
+    temperature=0,
+    model_name="gpt-3.5-turbo-instruct",  # Changed to compatible model
+    openai_api_key=OPENAI_API_KEY
+)
+
+
+# Fetch stock data from Yahoo Finance
+def get_stock_price(ticker, history=5):
+    # time.sleep(4) #To avoid rate limit error
+    ticker = ticker  # No need to add ".NS" for U.S. stocks
+    stock = yf.Ticker(ticker)
+    df = stock.history(period="1y")
+    df = df[["Close", "Volume"]]
+    df.index = [str(x).split()[0] for x in list(df.index)]
+    df.index.rename("Date", inplace=True)
+    df = df[-history:]
+    return df.to_string()
+
+
+# Script to scrap top5 Google news for given company name
+def google_query(search_term):
+    if "news" not in search_term:
+        search_term = search_term + " stock news"
+    url = f"https://www.google.com/search?q={search_term}&cr=countryUS"
+    url = re.sub(r"\s", "+", url)
+    return url
+
+
+def get_recent_stock_news(company_name):
+    # time.sleep(4) #To avoid rate limit error
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/102.0.0.0 Safari/537.36'}
+
+    g_query = google_query(company_name)
+    res = requests.get(g_query, headers=headers).text
+    soup = BeautifulSoup(res, "html.parser")
+    news = []
+    for n in soup.find_all("div", "n0jPhd ynAwRc tNxQIb nDgy9d"):
+        news.append(n.text)
+    for n in soup.find_all("div", "IJl0Z"):
+        news.append(n.text)
+
+    if len(news) > 6:
+        news = news[:4]
+    else:
+        news = news
+    news_string = ""
+    for i, n in enumerate(news):
+        news_string += f"{i}. {n}\n"
+    top5_news = "Recent News:\n\n" + news_string
+
+    return top5_news
+
+
+# Fetch financial statements from Yahoo Finance
+def get_financial_statements(ticker):
+    # time.sleep(4) #To avoid rate limit error
+    ticker = ticker  # No need to add ".NS" for U.S. stocks
+    company = yf.Ticker(ticker)
+    balance_sheet = company.balance_sheet
+    if balance_sheet.shape[1] >= 3:
+        balance_sheet = balance_sheet.iloc[:, :3]    # Remove 4th year's data
+    balance_sheet = balance_sheet.dropna(how="any")
+    balance_sheet = balance_sheet.to_string()
+    return balance_sheet
+
+
+# Openai function calling
+function = [
+    {
+        "name": "get_company_Stock_ticker",
+        "description": "This will get the US stock ticker of the company",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "ticker_symbol": {
+                    "type": "string",
+                    "description": "This is the stock symbol of the company.",
+                },
+
+                "company_name": {
+                    "type": "string",
+                    "description": "This is the name of the company given in query",
+                }
+            },
+            "required": ["company_name", "ticker_symbol"],
+        },
+    }
+]
+
+
+def get_stock_ticker(query):
+    response = client.chat.completions.create(
+        model="gpt-3.5-turbo",
+        temperature=0,
+        messages=[{
+            "role": "user",
+            "content": f"Given the user request, what is the company name and the company stock ticker ?: {query}?"
+        }],
+        functions=function,
+        function_call={"name": "get_company_Stock_ticker"},
+    )
+    message = response["choices"][0]["message"]
+    arguments = json.loads(message["function_call"]["arguments"])
+    company_name = arguments["company_name"]
+    company_ticker = arguments["ticker_symbol"]
+    return company_name, company_ticker
+
+
+def analyze_stock(query):
+    # agent.run(query) Outputs Company name, Ticker
+    Company_name, ticker = get_stock_ticker(query)
+    print({"Query": query, "Company_name": Company_name, "Ticker": ticker})
+    stock_data = get_stock_price(ticker, history=10)
+    stock_financials = get_financial_statements(ticker)
+    stock_news = get_recent_stock_news(Company_name)
+
+    available_information = f"Stock Price: {stock_data}\n\nStock Financials: {stock_financials}\n\nStock News: {stock_news}"
+
+    # Run the analysis using the available data
+    analysis = llm(f"Give detailed stock analysis, Use the available data and provide an investment recommendation. \
+                 The user is fully aware of the investment risk, don’t include any kind of warning like 'It is recommended to conduct further research and analysis or consult with a financial advisor before making an investment decision' in the answer. \
+                 User question: {query} \
+                 You have the following information available about {Company_name}. Write (5-8) pointwise investment analysis to answer user query, At the end conclude with proper explanation. Try to give positives and negatives: \
+                  {available_information} ")
+
+    return analysis
+def main():
+    query = input("Enter a stock to analyze (e.g., 'Apple' or 'AAPL'): ")
+    analysis = analyze_stock(query)
+    print("\nStock Analysis:")
+    print(analysis)
+
+if __name__ == "__main__":
+    main()
 
 
 
