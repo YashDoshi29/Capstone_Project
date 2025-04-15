@@ -334,6 +334,15 @@
 #     app.run(debug=True)
 
 
+
+
+
+
+
+
+
+
+
 # import os
 # import requests
 # from flask import Flask, jsonify, request
@@ -1334,6 +1343,11 @@
 #     if not predictor.is_trained:
 #         predictor.train()
 #     app.run(host='0.0.0.0', port=5001, debug=False)
+
+
+
+
+
 
 
 #NEMI
