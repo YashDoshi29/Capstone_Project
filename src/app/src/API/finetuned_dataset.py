@@ -1,62 +1,58 @@
 # #FINAL CODE FOR FETCHING DATA FROM SCRATCH TO FINAL FINETUNE DATA - APRIL 10
 
-# ############################################
-# # PART 1: FETCHING RAW STOCK DATA
-# ############################################
-# import yfinance as yf
-# import pandas as pd
+############################################
+# PART 1 (UPDATED): FETCH 2015–2024 INTO data/raw/
+############################################
 # import os
-# from datetime import datetime, timedelta
+# import pandas as pd
+# import yfinance as yf
 
-# # List of stock symbols
+# # 20 tickers
 # STOCK_LIST = [
-#     'AAPL', 'MSFT', 'NVDA', 'AMD',
-#     'JNJ', 'PFE', 'JPM', 'GS',
-#     'KO', 'PEP', 'XOM', 'NEE', 'CVX', 'WMT', 'HD', 'GME',
-#     'TSLA', 'F', 'COIN', 'MRNA'
+#     'AAPL','MSFT','NVDA','AMD','JNJ','PFE','JPM','GS',
+#     'KO','PEP','XOM','NEE','CVX','WMT','HD','GME',
+#     'TSLA','F','COIN','MRNA'
 # ]
 
-# # For training, fetch data from approximately 7 years ago until 3 months ago
-# TRAIN_START_DATE = (datetime.now() - timedelta(days=7*365)).strftime("%Y-%m-%d")
-# TRAIN_END_DATE = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
-
-# # Create directory for raw data
+# # This folder already contains your raw CSVs (previously 4 yr slices).
 # RAW_DATA_DIR = "data/raw"
 # os.makedirs(RAW_DATA_DIR, exist_ok=True)
 
-# def fetch_stock_data(symbol):
-#     """Fetch historical daily stock data from Yahoo Finance for a given symbol."""
-#     try:
-#         # Note: YF.download() now defaults auto_adjust=True
-#         df = yf.download(symbol, start=TRAIN_START_DATE, end=TRAIN_END_DATE, progress=False)
-#     except Exception as e:
-#         print(f"Error fetching data for {symbol}: {e}")
-#         return None
+# # === explicit time range ===
+# START_DATE = "2015-01-01"   # inclusive → Jan 1, 2015
+# END_DATE   = "2025-01-01"   # exclusive → so up through Dec 31, 2024
 
-#     if df.empty:
-#         print(f"No data returned for {symbol}.")
-#         return None
+# def fetch_and_overwrite():
+#     for sym in STOCK_LIST:
+#         out_path = os.path.join(RAW_DATA_DIR, f"{sym}.csv")
+#         print(f"\n→ Fetching {sym} from {START_DATE} to {END_DATE}…")
 
-#     return df
+#         # download the full range
+#         df = yf.download(
+#             sym,
+#             start=START_DATE,
+#             end=END_DATE,
+#             progress=False,
+#             auto_adjust=True
+#         )
+#         if df is None or df.empty:
+#             print(f"[ERROR] No data for {sym}.csv; skipping.")
+#             continue
 
-# def save_raw_data():
-#     """Fetch and save raw CSV files for each stock symbol."""
-#     for symbol in STOCK_LIST:
-#         print(f"Fetching raw data for {symbol}...")
-#         df = fetch_stock_data(symbol)
-#         if df is not None:
-#             file_path = os.path.join(RAW_DATA_DIR, f"{symbol}.csv")
-#             df.to_csv(file_path)
-#             print(f"Saved raw data for {symbol} to {file_path}")
-#         else:
-#             print(f"Failed to fetch data for {symbol}.")
+#         # ensure index name matches your existing files
+#         df.index.name = "Date"
+
+#         # overwrite the raw CSV
+#         df.to_csv(out_path)
+#         print(f"[OK] Wrote {len(df)} rows to {out_path}")
 
 # if __name__ == "__main__":
-#     save_raw_data()
+#     fetch_and_overwrite()
 
-# ############################################
-# # PART 2: PROCESSING RAW DATA & COMPUTING TECHNICAL INDICATORS
-# ############################################
+
+# # ############################################
+# # # PART 2: PROCESSING RAW DATA & COMPUTING TECHNICAL INDICATORS
+# # ############################################
 # import glob
 # import ta
 
@@ -245,44 +241,137 @@
 
 #DATASET SPLIT - TRAIN, VALIDATION, TEST
 
+# import json
+# import pandas as pd
+# import os
+# from sklearn.model_selection import train_test_split
+
+# # Path to your fine-tuning dataset JSONL file.
+# INPUT_FILE = "data/finetune/finetune_dataset.jsonl"
+
+# # Load all examples from the JSONL file into a DataFrame.
+# data = []
+# with open(INPUT_FILE, "r", encoding="utf-8") as f:
+#     for line in f:
+#         data.append(json.loads(line))
+# df = pd.DataFrame(data)
+# print("Total examples in dataset:", len(df))
+
+# # Perform a three-way split: 70% Train, 15% Validation, 15% Test.
+# # First, split off the test set.
+# train_val_df, test_df = train_test_split(df, test_size=0.15, random_state=42, shuffle=True)
+# # Then split the remaining train_val into train and validation.
+# # To get approximately 70% train and 15% val overall, use test_size = 0.1765 (0.1765 * 0.85 ≈ 0.15).
+# train_df, val_df = train_test_split(train_val_df, test_size=0.1765, random_state=42, shuffle=True)
+
+# print("Training set size:", len(train_df))
+# print("Validation set size:", len(val_df))
+# print("Test set size:", len(test_df))
+
+# # Create a directory to save the splits.
+# os.makedirs("data/finetune/splits", exist_ok=True)
+
+# def save_jsonl(df, filename):
+#     with open(filename, "w", encoding="utf-8") as f:
+#         for _, row in df.iterrows():
+#             f.write(json.dumps(row.to_dict()) + "\n")
+
+# # Save splits to separate JSONL files.
+# save_jsonl(train_df, "data/finetune/splits/train.jsonl")
+# save_jsonl(val_df, "data/finetune/splits/val.jsonl")
+# save_jsonl(test_df, "data/finetune/splits/test.jsonl")
+
+# print("Splits saved to data/finetune/splits/")
+
+
+
+
+
+#Train test split with stratify
+
+
+import os
 import json
 import pandas as pd
-import os
 from sklearn.model_selection import train_test_split
 
-# Path to your fine-tuning dataset JSONL file.
-INPUT_FILE = "data/finetune/finetune_dataset.jsonl"
+# ─── CONFIG ───────────────────────────────────────────────────────────────
+INPUT_FILE  = "data/finetune/finetune_dataset.jsonl"
+SPLITS_DIR  = "data/finetune/splits"
+TRAIN_FILE  = os.path.join(SPLITS_DIR, "train_balanced_df.jsonl")
+VAL_FILE    = os.path.join(SPLITS_DIR, "val_df.jsonl")
+TEST_FILE   = os.path.join(SPLITS_DIR, "test_df.jsonl")
 
-# Load all examples from the JSONL file into a DataFrame.
-data = []
+os.makedirs(SPLITS_DIR, exist_ok=True)
+
+# ─── 1) LOAD JSONL INTO DATAFRAME ─────────────────────────────────────────
+records = []
 with open(INPUT_FILE, "r", encoding="utf-8") as f:
     for line in f:
-        data.append(json.loads(line))
-df = pd.DataFrame(data)
-print("Total examples in dataset:", len(df))
+        records.append(json.loads(line))
+df = pd.DataFrame(records)
+print("Total examples:", len(df))
+print("Overall balance:\n", df["response"].value_counts(normalize=True), "\n")
 
-# Perform a three-way split: 70% Train, 15% Validation, 15% Test.
-# First, split off the test set.
-train_val_df, test_df = train_test_split(df, test_size=0.15, random_state=42, shuffle=True)
-# Then split the remaining train_val into train and validation.
-# To get approximately 70% train and 15% val overall, use test_size = 0.1765 (0.1765 * 0.85 ≈ 0.15).
-train_df, val_df = train_test_split(train_val_df, test_size=0.1765, random_state=42, shuffle=True)
+# ─── 2) STRATIFIED SPLIT 70/15/15 ──────────────────────────────────────────
+# First carve off 15% for test
+train_val_df, test_df = train_test_split(
+    df,
+    test_size=0.15,
+    random_state=42,
+    shuffle=True,
+    stratify=df["response"]
+)
 
-print("Training set size:", len(train_df))
-print("Validation set size:", len(val_df))
-print("Test set size:", len(test_df))
+# Then carve validation (≈0.1765 of train_val → 15% overall)
+train_df, val_df = train_test_split(
+    train_val_df,
+    test_size=0.1765,
+    random_state=42,
+    shuffle=True,
+    stratify=train_val_df["response"]
+)
 
-# Create a directory to save the splits.
-os.makedirs("data/finetune/splits", exist_ok=True)
+# assume train_df has a column "response" with values "Up"/"Down"
+counts = train_df['response'].value_counts()
+max_count = counts.max()
 
-def save_jsonl(df, filename):
-    with open(filename, "w", encoding="utf-8") as f:
+# collect each class, oversample the smaller one
+dfs = []
+for label, cnt in counts.items():
+    df_label = train_df[train_df['response'] == label]
+    if cnt < max_count:
+        # sample with replacement to reach max_count
+        df_label = pd.concat([
+            df_label,
+            df_label.sample(max_count - cnt, replace=True, random_state=42)
+        ], ignore_index=True)
+    dfs.append(df_label)
+
+# concatenate and shuffle
+train_balanced_df = pd.concat(dfs, ignore_index=True)
+train_balanced_df = train_balanced_df.sample(frac=1, random_state=42).reset_index(drop=True)
+
+print("After oversampling, train class balance:")
+print(train_balanced_df['response'].value_counts())
+
+
+print("Train size (after oversampling):", len(train_balanced_df),
+      "balance:", train_balanced_df["response"].value_counts(normalize=True).to_dict())
+print("Val   size:", len(val_df),    "balance:", val_df["response"].value_counts(normalize=True).to_dict())
+print("Test  size:", len(test_df),   "balance:", test_df["response"].value_counts(normalize=True).to_dict())
+
+# ─── 3) SAVE SPLITS AS JSONL ───────────────────────────────────────────────
+def save_jsonl(df, path):
+    with open(path, "w", encoding="utf-8") as f:
         for _, row in df.iterrows():
             f.write(json.dumps(row.to_dict()) + "\n")
 
-# Save splits to separate JSONL files.
-save_jsonl(train_df, "data/finetune/splits/train.jsonl")
-save_jsonl(val_df, "data/finetune/splits/val.jsonl")
-save_jsonl(test_df, "data/finetune/splits/test.jsonl")
+save_jsonl(train_balanced_df, TRAIN_FILE)
+save_jsonl(val_df,   VAL_FILE)
+save_jsonl(test_df,  TEST_FILE)
 
-print("Splits saved to data/finetune/splits/")
+# print(f"\nSplits written to {SPLITS_DIR}:")
+# print(f"  • {TRAIN_FILE}")
+# print(f"  • {VAL_FILE}")
+# print(f"  • {TEST_FILE}")
