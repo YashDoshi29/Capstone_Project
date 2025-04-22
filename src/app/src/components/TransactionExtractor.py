@@ -64,19 +64,16 @@ def extract_text_from_pdf(pdf_bytes, output_filename="extracted_text.txt"):
         with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
             all_text = ""
             for page in pdf.pages:
-                # Extract the text
                 all_text += page.extract_text()
 
-            if all_text.strip():  # Check if text extraction from pdfplumber was successful
+            if all_text.strip(): 
                 print("Text extracted using pdfplumber.")
             else:
-                # If pdfplumber extraction is empty, use pytesseract for OCR
                 print("No text found using pdfplumber. Falling back to OCR...")
                 images = convert_from_bytes(pdf_bytes)
                 ocr_text = "\n".join([pytesseract.image_to_string(img, config="--psm 6") for img in images])
                 all_text = ocr_text
 
-            # Write the extracted text to a new text file
             with open(output_filename, "w", encoding="utf-8") as output_file:
                 output_file.write(all_text)
 
@@ -95,7 +92,6 @@ def extract_transactions(text):
     """Robust line-by-line transaction extraction using multiple patterns."""
     transactions = []
 
-    # BoA pattern: MM/DD MM/DD Description State [4-digit block(s)] Amount
     boa_pattern = re.compile(
         r"(\d{2}/\d{2})\s+(\d{2}/\d{2})\s+(.+?)\s+([A-Z]{2})(?:\s+\d{4}){1,2}\s+([-?\d,]+\.\d{2})"
     )
@@ -162,7 +158,6 @@ class CategoryMapper:
         "Here are the stores:\n" + "\n".join(unique_stores)
     )
 
-
         try:
             response = llm_api.query(prompt)
             print("🧠 Raw LLM Response:\n", response)
@@ -205,12 +200,11 @@ class StoreNameExtractor:
 
 
 class CreditCardStatementProcessor:
-    def __init__(self, file_bytes, file_type, llm_api):
+    def __init__(self, file_bytes, llm_api):
         self.file_bytes = file_bytes
-        self.file_type = file_type
         self.llm_api = llm_api
 
-    def process_pdf(self):
+    def process(self):
         text = extract_text_from_pdf(self.file_bytes)
         transactions_df = extract_transactions(text)
 
@@ -218,58 +212,35 @@ class CreditCardStatementProcessor:
             print("No transactions found.")
             return
 
-        transactions_df = StoreNameExtractor.extract_store_names(transactions_df) 
+        transactions_df = StoreNameExtractor.extract_store_names(transactions_df)
         transactions_df.to_csv("transactions_with_categories.csv", index=False)
 
         df = pd.read_csv("transactions_with_categories.csv")
         categories_df = CategoryMapper.map_categories(df, self.llm_api)
 
-        df['Fuzzy_Match_Description'] = df['Store'].apply(lambda x: FuzzyMatcher.fuzzy_match(x, categories_df['Transaction'].unique()))
-        df_merged = pd.merge(df, categories_df, left_on='Fuzzy_Match_Description', right_on='Transaction', how='left').drop(columns=['Fuzzy_Match_Description'])
+        df['Fuzzy_Match_Description'] = df['Store'].apply(
+            lambda x: FuzzyMatcher.fuzzy_match(x, categories_df['Transaction'].unique())
+        )
+        df_merged = pd.merge(df, categories_df, left_on='Fuzzy_Match_Description', right_on='Transaction', how='left')
+        df_merged.drop(columns=['Fuzzy_Match_Description'], inplace=True)
         df_merged.drop_duplicates(inplace=True)
         df_merged.to_csv("categorized_transactions.csv", index=False)
-
-    def process_csv(self):
-        df = pd.read_csv(io.BytesIO(self.file_bytes))
-        categories_df = CategoryMapper.map_categories(df, self.llm_api)
-
-        df['Fuzzy_Match_Description'] = df['Store'].apply(lambda x: FuzzyMatcher.fuzzy_match(x, categories_df['Transaction'].unique()))
-        df_merged = pd.merge(df, categories_df, left_on='Fuzzy_Match_Description', right_on='Transaction', how='left').drop(columns=['Fuzzy_Match_Description'])
-
-        df_merged.to_csv("categorized_transactions.csv", index=False)
-
-    def process(self):
-        if self.file_type == "pdf":
-            self.process_pdf()
-        elif self.file_type == "csv":
-            self.process_csv()
-        else:
-            raise ValueError("Unsupported file type")
 
 @app.route("/upload", methods=["POST"])
 def upload_file():
     try:
         if "file" not in request.files:
-            print("❌ No file part in request")
             return jsonify({"error": "No file part"}), 400
 
         file = request.files["file"]
         if file.filename == "":
-            print("❌ No selected file")
             return jsonify({"error": "No selected file"}), 400
 
-        file_extension = file.filename.split('.')[-1].lower()
-        if file_extension == "pdf":
-            file_type = "pdf"
-        elif file_extension == "csv":
-            file_type = "csv"
-        else:
-            return jsonify({"error": "Unsupported file type"}), 400
+        if file.filename.split('.')[-1].lower() != "pdf":
+            return jsonify({"error": "Only PDF files are supported."}), 400
 
-        print(f"✅ File uploaded: {file.filename}")
         file_bytes = file.read()
-
-        processor = CreditCardStatementProcessor(file_bytes, file_type, llm_api)
+        processor = CreditCardStatementProcessor(file_bytes, llm_api)
         processor.process()
 
         with open("categorized_transactions.csv", "r") as f:
@@ -278,6 +249,7 @@ def upload_file():
     except Exception as e:
         print("❌ Server Error:", e)
         return jsonify({"error": "Internal Server Error", "details": str(e)}), 500
+
 
 if __name__ == "__main__":
     app.run(debug=True, port=5050, use_reloader=False)

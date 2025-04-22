@@ -157,7 +157,7 @@ class TransactionGenerator:
 
     def load_data(self, customers_path: str, merchants_path: str):
         """
-        Load and preprocess input data. Then randomly pick 150 customers from a large dataset.
+        Load and preprocess input data. Then randomly pick customers from a large dataset.
         """
         all_customers = pd.read_csv(customers_path)
         # Randomly pick 150 from the dataset
@@ -452,7 +452,7 @@ class TransactionGenerator:
                     print(f"Skipping transaction due to error: {e}")
 
                 # Sleep to avoid rate limiting
-                time.sleep(2)
+                time.sleep(10)
 
         # Step 4: Save to CSV
         pd.DataFrame(transactions).to_csv(output_path, index=False)
@@ -462,7 +462,7 @@ class TransactionGenerator:
 if __name__ == "__main__":
     generator = TransactionGenerator(api_key=API_KEY_Groq)
     generator.load_data(
-        customers_path="../data/synthetic_customer_gan.csv",  # e.g. 100k+ customers
+        customers_path="../data/synthetic_customer_gan.csv",
         merchants_path="../data/dc_businesses_cleaned.csv"
     )
     generator.generate_transactions("synthetic_transactions.csv", target=1000)

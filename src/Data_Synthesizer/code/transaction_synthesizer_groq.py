@@ -1,173 +1,458 @@
-import os
-import json
 import pandas as pd
 import numpy as np
-from groq import Groq
-from datetime import datetime, timedelta
+import random
+import requests
+import json
+import time
+from typing import Dict, List
+from geopy.distance import geodesic
+from config import API_KEY_Groq
+from pydantic import BaseModel
+from fastapi import FastAPI, HTTPException
+import os
+from fastapi.middleware.cors import CORSMiddleware
 
-client = Groq(api_key=api_key)
+path = os.path.dirname(os.path.abspath(__file__))
+df_path = os.path.join(path, "..", "data", "dc_businesses_cleaned.csv")
 
-# Configuration optimized for DC-specific data
-PROFESSIONS = ["Student", "Federal Employee", "Businessman"]
-CATEGORY_WEIGHTS = {
-    "Student": {"Education": 0.3, "Food": 0.4, **{k: 0.3 / 3 for k in ["Housing", "Transportation", "Entertainment"]}},
-    "Federal Employee": {"Housing": 0.4, "Transportation": 0.3,
-                         **{k: 0.3 / 3 for k in ["Food", "Entertainment", "Education"]}},
-    "Businessman": {"Entertainment": 0.3, "Food": 0.4,
-                    **{k: 0.3 / 3 for k in ["Housing", "Transportation", "Education"]}}
+
+# Updated Merchant category mapping
+CATEGORY_MAPPING = {
+    # Food & Grocery
+    "Grocery Store": "groceries",
+    "Delicatessen": "deli_prepared_foods",
+    "Bakery": "bakery",
+    "Food Products": "packaged_foods",
+    "Food Vending Machine": "vending_snacks",
+    "Ice Cream Manufacture": "ice_cream",
+    "Marine Food Retail": "seafood_market",
+    "Mobile Delicatessen": "food_truck",
+
+    # Dining
+    "Restaurant": "restaurant_dining",
+    "Caterers": "catering_services",
+
+    # Transportation
+    "Gasoline Dealer": "gas_station",
+    "Auto Rental": "car_rental",
+    "Auto Wash": "car_wash",
+    "Tow Truck": "towing_services",
+    "Tow Truck Business": "towing_company",
+    "Tow Truck Storage Lot": "vehicle_storage",
+    "Driving School": "driving_lessons",
+
+    # Entertainment
+    "Motion Picture Theatre": "movie_theater",
+    "Public Hall": "event_venue",
+    "Theater (Live)": "live_theater",
+    "Bowling Alley": "bowling",
+    "Billiard Parlor": "pool_hall",
+    "Skating Rink": "skating_rink",
+    "Athletic Exhibition": "sports_events",
+    "Special Events": "special_events",
+
+    # Lodging
+    "Hotel": "hotel_lodging",
+    "Inn And Motel": "motel_lodging",
+    "Bed and Breakfast": "bnb_lodging",
+    "Vacation Rental": "vacation_rental",
+    "Boarding House": "boarding_house",
+
+    # Personal Care
+    "Beauty Shop": "beauty_services",
+    "Barber Shop": "barber_services",
+    "Beauty Booth": "beauty_booth",
+    "Beauty Shop Braiding": "hair_braiding",
+    "Beauty Shop Electrology": "electrolysis",
+    "Beauty Shop Esthetics": "skin_care",
+    "Beauty Shop Nails": "nail_salon",
+    "Health Spa": "spa_services",
+    "Massage Establishment": "massage_parlor",
 }
 
-DC_MERCHANTS = {
-    "Grocery Store": [
-        "Giant Food", "Safeway", "Whole Foods DC", "Yes! Organic Market", "Trader Joe's", "Harris Teeter",
-        "ALDI Northeast", "MOM's Organic Market", "Dean & DeLuca", "Costco DC", "Wegmans DC", "La Cosecha Market",
-        "Union Market", "Eastern Market Grocery", "Capitol Supermarket", "Good Food Markets", "Corner Market DC",
-        "Neighborhood Grocery", "Foxtrot Market", "Lidl DC", "Greenheart Organic", "FreshFarm DC", "Capitol Hill Mart",
-        "Metro Market", "Southeast Market", "FRESHFARM H Street", "Bloom Grocery", "Vegan Market DC", "Organic Brothers"
-    ],
-    "Restaurant": [
-        "Ben's Chili Bowl", "Old Ebbitt Grill", "Founding Farmers", "Baan Siam", "Le Diplomate", "Busboys and Poets",
-        "RPM Italian", "Barcelona Wine Bar", "Jaleo DC", "Maketto", "Blue Duck Tavern", "Zaytinya", "Ted's Bulletin",
-        "Osteria Morini", "Duke's Grocery", "Rose’s Luxury", "Cava Mezze", "Farmbird", "Roaming Rooster", "Toki Underground",
-        "District Taco", "Shouk DC", "El Rey", "Compass Rose", "Rasika", "CIRCA at Foggy Bottom", "The Smith", "Nando’s DC",
-        "Pho 14", "Surfside", "Mastro’s DC", "Del Mar Wharf", "Tiger Fork", "Hatoba", "All-Purpose Pizzeria"
-    ],
-    "Gasoline Dealer": [
-        "ExxonMobil DC", "Shell Capitol Hill", "BP Foggy Bottom", "Sunoco New York Ave", "Chevron Georgia Ave",
-        "Citgo U Street", "Liberty Gas NW", "Shell Adams Morgan", "Exxon Wisconsin Ave", "BP 14th Street",
-        "Shell Benning Rd", "Exxon H Street", "Chevron SE", "Sunoco Brookland", "Marathon Columbia Heights"
-    ],
-    "Hotel": [
-        "Watergate Hotel", "Willard InterContinental", "Hamilton Crowne Plaza", "The LINE DC", "Marriott Marquis",
-        "The Ritz-Carlton Georgetown", "Hotel Hive", "Sofitel Lafayette", "Dupont Circle Hotel", "Hyatt Place DC",
-        "AC Hotel Navy Yard", "Conrad Washington DC", "The Darcy Hotel", "InterContinental Wharf", "Capitol Hill Hotel",
-        "Hotel Washington", "The Madison Hotel", "Kimpton George Hotel", "Thompson DC", "YOTEL DC"
-    ],
-    "Massage Establishment": [
-        "Spa World", "Capitol Massage", "Dupont Circle Thai Spa", "Unwind Wellness Center", "Massage Envy DC",
-        "Tranquil Souls", "Deluca Massage & Bodywork", "Elements Massage DC", "U Thai Spa", "Massage Escape DC",
-        "Bliss Spa Georgetown", "Georgetown Massage", "The Now Massage", "Body Harmony Spa", "Oasis Thai Spa",
-        "Pure Bliss Spa", "Zensations DC", "Rejuvenation Lounge", "Serenity Massage", "Happy Feet Spa"
-    ],
-    "Motion Picture Theatre": [
-        "AMC Georgetown", "Landmark E Street Cinema", "AFI Silver", "Regal Gallery Place", "Angelika Pop-Up",
-        "ShowPlace ICON Theatres", "Alamo Drafthouse DC", "The Avalon Theatre", "Miracle Theatre", "West End Cinema",
-        "Cinema Club DC", "District Movie House", "Union Market Drive-In", "Capitol Cinema", "Chinatown Theatres"
-    ],
-    "Clothing Store": [
-        "Zara DC", "Uniqlo Georgetown", "Nordstrom Rack", "Banana Republic", "Madewell", "J.Crew", "H&M",
-        "Anthropologie", "Lululemon", "Gap DC", "Reformation DC", "Urban Outfitters", "Everlane DC", "Patagonia DC",
-        "Nike Store Georgetown", "Adidas Store", "Levi’s Store DC", "The North Face", "Aritzia", "Under Armour DC",
-        "Frank And Oak", "Express DC", "Club Monaco", "Theory DC", "Rag & Bone", "Buckle DC", "Cotton On", "Athleta DC",
-        "Free People DC", "Abercrombie DC"
-    ],
-    "Electronics": [
-        "Apple Store Georgetown", "Best Buy DC", "Micro Center", "Target Tech DC", "uBreakiFix", "Microsoft Store DC",
-        "Verizon Wireless", "T-Mobile DC", "AT&T Store", "GameStop", "B&H Express DC", "Camera Shop Georgetown",
-        "Staples DC", "Office Depot", "DC Tech World", "Tech Corner", "Digital Haven", "Phone Repair Pros", "Geek Squad DC",
-        "Electronic World DC", "CompuZone", "Tech Savvy", "Gadget Fixers", "ElectroMart", "Smart Solutions DC"
-    ],
-    "Fitness": [
-        "Planet Fitness DC", "OrangeTheory Fitness", "Barry’s DC", "Solidcore", "CrossFit DC", "Gold’s Gym DC",
-        "LA Fitness Columbia Heights", "SoulCycle Georgetown", "Equinox DC", "Vida Fitness", "F45 Training DC",
-        "Crunch Fitness DC", "Yoga District", "CycleBar DC", "CorePower Yoga", "FitDC", "9Round Kickboxing", "TITLE Boxing Club",
-        "Fit Lab DC", "Elite Performance DC", "Balance Gym", "Cut Seven", "Down Dog Yoga", "Zengo Cycle", "Washington Sports Club"
-    ],
-    "Education": ["George Washington University", "Georgetown University", "Howard University", "American University",
-    "University of the District of Columbia", "Strayer University", "Trinity Washington University",
-    "Gallaudet University", "Catholic University of America", "UDC Community College",
-    "Kaplan Test Prep DC", "DC Public Schools", "District of Learning Center", "ELS Language Centers DC",
-    "Princeton Review DC", "Code Fellows DC", "General Assembly DC", "Sylvan Learning Center",
-    "Kumon of Capitol Hill", "Varsity Tutors DC", "Mathnasium DC", "Berlitz Language Center",],
-
-    "Healthcare": ["MedStar Washington Hospital Center", "George Washington University Hospital", "Sibley Memorial Hospital",
-    "Children's National Hospital", "Howard University Hospital", "Kaiser Permanente DC", "Unity Health Care",
-    "Providence Health System", "DC Health & Wellness Center", "One Medical DC", "CVS MinuteClinic DC",
-    "Walgreens Healthcare Clinic", "Georgetown University Hospital", "Medics USA", "MyDoc Urgent Care",
-    "CityHealth Urgent Care", "CareFirst BlueCross DC", "Aetna Health DC", "Planned Parenthood DC", "Sunrise Medical Group"
-    ],
+# Approximate coordinates for DC ZIP codes
+DC_ZIP_COORDS = {
+    '20001': (38.9109, -77.0163),
+    '20002': (38.9123, -77.0127),
+    '20003': (38.8857, -76.9894),
+    '20004': (38.8951, -77.0366),
+    '20005': (38.9026, -77.0311),
+    '20006': (38.8979, -77.0369),
+    '20007': (38.9183, -77.0709),
+    '20008': (38.9368, -77.0595),
+    '20009': (38.9193, -77.0374),
+    '20010': (38.9327, -77.0294),
+    '20011': (38.9566, -77.0232),
+    '20012': (38.9770, -77.0296),
+    '20015': (38.9664, -77.0846),
+    '20016': (38.9346, -77.0896),
+    '20017': (38.9348, -76.9886),
+    '20018': (38.9238, -76.9894),
+    '20019': (38.8898, -76.9488),
+    '20020': (38.8641, -76.9857),
+    '20024': (38.8743, -77.0167),
+    '20032': (38.8458, -77.0013),
+    '20036': (38.9055, -77.0417),
+    '20037': (38.8996, -77.0527),
+    '20052': (38.8990, -77.0479),
+    '20057': (38.9087, -77.0731),
+    '20064': (38.9335, -76.9978),
 }
 
-def generate_dc_transactions(num_customers=50, transactions_per=2):
-    """Generate realistic DC transaction data with temporal patterns"""
-    np.random.seed(42)
-    transactions = []
-    customer_id = 1000
 
-    for profession in PROFESSIONS:
-        # Generate customer base with profession-specific patterns
-        for _ in range(num_customers):
-            cust_id = f"CUST{customer_id}"
-            customer_id += 1
+class TransactionGenerator:
+    def __init__(self, api_key: str, merchants_df: pd.DataFrame):
+        self.api_key = api_key
+        self.headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+        self.merchants = merchants_df
+        self._preprocess_merchants()
+        self._build_merchant_cache()
 
-            # Generate multiple transactions per customer
-            for _ in range(transactions_per):
-                # DC-specific date patterns (weekdays vs weekends)
-                date = generate_dc_date()
+        self.spending_categories = {
+            # Food & Grocery
+            "groceries": 0.14,
+            "deli_prepared_foods": 0.02,
+            "bakery": 0.02,
+            "packaged_foods": 0.02,
+            "vending_snacks": 0.01,
+            "ice_cream": 0.01,
+            "seafood_market": 0.02,
+            "food_truck": 0.02,
 
-                # Category selection with DC-specific weighting
-                category = np.random.choice(
-                    list(CATEGORY_WEIGHTS[profession].keys()),
-                    p=list(CATEGORY_WEIGHTS[profession].values())
-                )
+            # Dining
+            "restaurant_dining": 0.10,
+            "catering_services": 0.02,
 
-                # Merchant selection with DC landmarks
-                merchant = np.random.choice(DC_MERCHANTS[category])
+            # Transportation
+            "gas_station": 0.05,
+            "car_rental": 0.01,
+            "car_wash": 0.01,
+            "towing_services": 0.00,
+            "towing_company": 0.00,
+            "vehicle_storage": 0.00,
+            "driving_lessons": 0.01,
 
-                # Amount generation with DC cost of living adjustments
-                amount = generate_realistic_amount(profession, category, date)
+            # Entertainment
+            "movie_theater": 0.03,
+            "event_venue": 0.02,
+            "live_theater": 0.01,
+            "bowling": 0.01,
+            "pool_hall": 0.01,
+            "skating_rink": 0.01,
+            "sports_events": 0.02,
+            "special_events": 0.02,
 
-                transactions.append({
-                    "Date": date.strftime("%Y-%m-%d"),
-                    "CustomerID": cust_id,
-                    "Profession": profession,
-                    "Merchant": merchant,
-                    "Amount": round(amount, 2),
-                    "Category": category,
-                    "Location": "Washington DC"
-                })
+            # Lodging
+            "hotel_lodging": 0.04,
+            "motel_lodging": 0.02,
+            "bnb_lodging": 0.01,
+            "vacation_rental": 0.02,
+            "boarding_house": 0.01,
 
-    return pd.DataFrame(transactions)
+            # Personal Care
+            "beauty_services": 0.03,
+            "barber_services": 0.02,
+            "beauty_booth": 0.00,
+            "hair_braiding": 0.00,
+            "electrolysis": 0.00,
+            "skin_care": 0.01,
+            "nail_salon": 0.01,
+            "spa_services": 0.02,
+            "massage_parlor": 0.01
+        }
+
+        # Transaction scaling parameters
+        self.MIN_TRANSACTIONS = 5
+        self.MAX_TRANSACTIONS = 20
+        self.BASE_INCOME = 50000  # Median income for scaling
+
+    def _preprocess_merchants(self):
+        """Clean and prepare merchant data"""
+        column_map = {
+            'ENTITY_NAME': 'Name',
+            'LICENSECATEGORY': 'Category',
+            'ZIP': 'Zipcode',
+            'LATITUDE': 'Latitude',
+            'LONGITUDE': 'Longitude'
+        }
+        self.merchants = self.merchants.rename(columns=column_map)
+
+        # Set default coordinates if missing
+        if 'Latitude' not in self.merchants.columns:
+            self.merchants['Latitude'] = 38.9072
+        if 'Longitude' not in self.merchants.columns:
+            self.merchants['Longitude'] = -77.0369
+
+        # Map categories and clean data
+        self.merchants['mapped_category'] = (
+            self.merchants['Category']
+            .map(CATEGORY_MAPPING)
+            .fillna('other')
+        )
+        self.merchants['Zipcode'] = (
+            self.merchants['Zipcode']
+            .astype(str)
+            .str.extract(r'(\d{5})')[0]
+            .fillna('20001')
+        )
+
+    def _build_merchant_cache(self):
+        """Build merchant lookup cache"""
+        self.merchant_cache = (
+            self.merchants.groupby(['Zipcode', 'mapped_category'])
+            .apply(lambda x: x.to_dict('records'))
+            .to_dict()
+        )
+
+    def _calculate_transaction_count(self, income: float) -> int:
+        """Logarithmic scaling of transaction count with income"""
+        income_ratio = np.log1p(max(income, 10000) / self.BASE_INCOME)
+        scaled = self.MIN_TRANSACTIONS + (self.MAX_TRANSACTIONS - self.MIN_TRANSACTIONS) * income_ratio
+        return min(self.MAX_TRANSACTIONS, int(scaled))
+
+    def _get_nearby_merchants(self, base_zip: str, max_distance: int = 2) -> List[Dict]:
+        """Find merchants within 'max_distance' miles using geodesic distance."""
+        clean_zip = str(int(float(base_zip))) if base_zip.replace('.', '').isdigit() else '20001'
+        clean_zip = clean_zip[:5]
+        base_coord = DC_ZIP_COORDS.get(clean_zip, DC_ZIP_COORDS['20001'])
+
+        self.merchants['distance'] = self.merchants.apply(
+            lambda row: geodesic(base_coord, (row['Latitude'], row['Longitude'])).miles,
+            axis=1
+        )
+        return self.merchants[self.merchants['distance'] <= max_distance]
+
+    def _get_merchant(self, category: str, zipcode: str) -> dict:
+        """Find appropriate merchant with fallback"""
+        clean_zip = zipcode[:5] if zipcode[:5] in DC_ZIP_COORDS else '20001'
+        merchants = self.merchant_cache.get((clean_zip, category), [])
+
+        if not merchants:
+            nearby_merchants = self._get_nearby_merchants(clean_zip)
+            merchants = [
+                m for m in nearby_merchants
+                if m.get('mapped_category') == category
+            ]
+
+        if not merchants:
+            # Fallback merchant
+            return {
+                "Name": f"DC {category.replace('_', ' ').title()}",
+                "Category": category,
+                "Zipcode": clean_zip,
+                "Latitude": DC_ZIP_COORDS[clean_zip][0],
+                "Longitude": DC_ZIP_COORDS[clean_zip][1]
+            }
+        return random.choice(merchants)
+
+    def _assign_categories(self) -> list:
+        """Random category assignment with income weighting"""
+        base_prob = 0.7  # Base probability for essential categories
+        return [
+            cat for cat, prob in self.spending_categories.items()
+            if random.random() < base_prob + (prob * 0.3)
+        ]
+
+    def _generate_spending_pattern(self, categories: list, income: float) -> dict:
+        """Create spending distribution based on categories and income"""
+        monthly_income = income / 12
+        total_weight = sum(self.spending_categories[cat] for cat in categories)
+
+        return {
+            cat: (self.spending_categories[cat] / total_weight) * monthly_income
+            for cat in categories
+        }
+
+    def generate_transactions(self, user_data: dict) -> list:
+        """Main generation method for React interface"""
+        max_retries = 3
+        retry_delay = 5
+
+        # Validate input first (outside retry loop)
+        required = ['age', 'gender', 'household_size', 'income', 'zipcode']
+        if any(field not in user_data for field in required):
+            raise ValueError("Missing required user data fields")
+
+        # Create customer profile
+        customer = {
+            'customer_id': f"WEB-{random.randint(100000, 999999)}",
+            **{k: user_data[k] for k in required},
+            'zipcode': str(user_data['zipcode'])[:5]
+        }
+
+        for attempt in range(max_retries):
+            try:
+                # Determine transaction count
+                tx_count = self._calculate_transaction_count(float(user_data['income']))
+
+                # Assign categories and spending pattern
+                categories = self._assign_categories()
+                if not categories:
+                    raise ValueError("No spending categories assigned")
+
+                spending_pattern = self._generate_spending_pattern(categories, customer['income'])
+                subcats, weights = zip(*spending_pattern.items())
+                probs = np.array(weights) / sum(weights)
+
+                transactions = []
+                for _ in range(tx_count):
+                    try:
+                        # Select category and merchant
+                        category = np.random.choice(subcats, p=probs)
+                        merchant = self._get_merchant(category, customer['zipcode'])
+
+                        if not merchant.get('mapped_category'):
+                            merchant['mapped_category'] = category
+
+                        # Generate transaction via API
+                        txn = self._generate_transaction(customer, merchant)
+                        transactions.append(txn)
+
+                        # Rate limiting
+                        time.sleep(1.0)  # More conservative delay for Groq API
+
+                    except Exception as e:
+                        print(f"Transaction generation failed: {str(e)}")
+                        continue
+
+                return transactions
+
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code == 429:
+                    sleep_time = retry_delay * (attempt + 1)
+                    print(f"Rate limited, retrying in {sleep_time}s...")
+                    time.sleep(sleep_time)
+                    continue
+                raise
+
+            except Exception as e:
+                print(f"Transaction batch failed: {str(e)}")
+                if attempt == max_retries - 1:
+                    raise Exception(f"Max retries exceeded: {str(e)}")
+                time.sleep(retry_delay)
+                continue
+
+        return []
+
+    def _generate_transaction(self, customer: dict, merchant: dict) -> dict:
+        """Call Groq API to generate single transaction with enhanced error handling"""
+        try:
+            # Ensure required merchant fields exist
+            merchant.setdefault('mapped_category', merchant.get('Category', 'other'))
+            merchant.setdefault('Name', 'Local Merchant')
+            merchant.setdefault('Zipcode', customer['zipcode'])
+
+            prompt = f"""Generate realistic transaction details:
+            - Customer: {customer['age']}yo {customer['gender']}, 
+              {customer['household_size']} household members
+            - Income: ${customer['income']:,}/year
+            - Merchant: {merchant['Name']} ({merchant.get('Category', 'retail')})
+            - Location: {merchant['Zipcode']}
+            - Category: {merchant['mapped_category']}
+
+            Output must be valid JSON with these exact fields:
+            {{
+                "amount": float,
+                "timestamp": "YYYY-MM-DDTHH:MM:SSZ",
+                "merchant_details": {{
+                    "name": "string",
+                    "category": "string",
+                    "zipcode": "string"
+                }},
+                "payment_type": "string"
+            }}"""
+
+            response = requests.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers=self.headers,
+                json={
+                    "model": "llama3-70b-8192",
+                    "messages": [
+                        {
+                            "role": "system",
+                            "content": "You are a financial data generator. Output must be valid JSON with exactly the fields specified."
+                        },
+                        {
+                            "role": "user",
+                            "content": prompt
+                        }
+                    ],
+                    "temperature": 0.3,
+                    "max_tokens": 500,
+                    "response_format": {"type": "json_object"}
+                },
+                timeout=30
+            )
+            response.raise_for_status()
+
+            # More robust response parsing
+            try:
+                content = response.json()['choices'][0]['message']['content']
+                if '```json' in content:
+                    content = content.split('```json')[1].split('```')[0]
+                txn = json.loads(content.strip())
+
+                # Validate response structure
+                required_fields = ['amount', 'timestamp', 'merchant_details', 'payment_type']
+                if not all(field in txn for field in required_fields):
+                    raise ValueError("Missing required fields in API response")
+
+                return {
+                    "customer_id": customer['customer_id'],
+                    "amount": round(float(txn['amount']), 2),
+                    "timestamp": txn['timestamp'],
+                    "merchant_details": {
+                        "name": str(txn['merchant_details']['name']),
+                        "category": str(txn['merchant_details']['category']),
+                        "zipcode": str(txn['merchant_details']['zipcode'])
+                    },
+                    "payment_type": str(txn['payment_type'])
+                }
+
+            except (json.JSONDecodeError, KeyError, ValueError) as e:
+                raise ValueError(f"Invalid API response format: {str(e)}")
+
+        except Exception as e:
+            raise ValueError(f"Transaction generation failed: {str(e)}")
 
 
-def generate_dc_date():
-    """Generate dates with DC temporal patterns (e.g., government pay cycles)"""
-    start_date = datetime.now() - timedelta(days=180)
-    random_days = np.random.randint(0, 180)
-    base_date = start_date + timedelta(days=random_days)
+# FastAPI Setup
+app = FastAPI()
 
-    # Adjust for DC payday patterns (1st/15th clustering)
-    if np.random.rand() < 0.3:
-        day = 1 if np.random.rand() < 0.5 else 15
-        return base_date.replace(day=day)
-    return base_date
+# Allow frontend to talk to the API
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Change "*" to your frontend domain in production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-
-def generate_realistic_amount(profession, category, date):
-    """DC-specific amount generation with cost of living adjustments"""
-    base_ranges = {
-        "Student": {"Housing": (800, 1500), "Food": (8, 25), "Transportation": (20, 50)},
-        "Federal Employee": {"Housing": (1200, 2500), "Food": (15, 75), "Transportation": (50, 150)},
-        "Businessman": {"Housing": (2000, 4000), "Food": (30, 150), "Transportation": (75, 300)}
-    }
-
-    # Get base range
-    min_val, max_val = base_ranges[profession].get(category, (10, 100))
-
-    # Weekend/Holiday markups
-    if date.weekday() >= 5:
-        min_val *= 1.2
-        max_val *= 1.5
-
-    # Generate amount with normal distribution (μ at 40% of range)
-    mu = min_val + (max_val - min_val) * 0.4
-    sigma = (max_val - min_val) * 0.2
-    amount = np.random.normal(mu, sigma)
-
-    return np.clip(amount, min_val, max_val)
+class UserInput(BaseModel):
+    age: int
+    gender: str
+    household_size: int
+    income: float
+    zipcode: str
 
 
-# Generate and save dataset
-df = generate_dc_transactions(num_customers=50, transactions_per=2)
-df.to_csv("dc_transactions_optimized.csv", index=False)
-print(f"Generated {len(df)} DC transactions with realistic patterns")
+# Initialize generator once at startup
+merchants_df = pd.read_csv(df_path)
+generator = TransactionGenerator(api_key=API_KEY_Groq, merchants_df=merchants_df)
+
+
+@app.post("/generate")
+async def generate_transactions(user_input: UserInput):
+    try:
+        transactions = generator.generate_transactions(user_input.dict())
+        return {"transactions": transactions}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
