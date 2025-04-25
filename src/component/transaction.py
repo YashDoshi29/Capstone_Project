@@ -5,7 +5,7 @@ import datetime
 import torch
 
 # SDV imports
-from sdv.metadata import SingleTableMetadata
+from sdv.single_table import SingleTableMetadata
 from sdv.single_table import CTGANSynthesizer
 
 # ----------------------------------
