@@ -110,6 +110,6 @@ Licensed under the [MIT License](./LICENSE).
 Special thanks to:
 - Credge AI Academy mentors
 - Open-source libraries (Hugging Face, TensorFlow, OpenAI, SDV)
-- Financial datasets from DC Open Data & Census
+- Financial datasets from DC Open Data, Census & Yelp Open Data.
 
 ---
