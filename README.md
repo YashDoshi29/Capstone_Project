@@ -1,6 +1,6 @@
 ![Credge AI Banner](https://yourbannerlink.com)
 
-# Credge AI – Your Financial Coach 🚀
+# Credge AI – Your Financial Coach
 
 Credge AI is an AI-driven personal finance coach designed to empower users with intelligent, data-driven money management. It generates realistic **synthetic financial data** to protect privacy while enabling rich model training ([paper](https://arxiv.org/pdf/2410.15653)). It automatically **classifies and optimizes budgets**, and offers an **LLM-based investment advisor** for personalized guidance.
 
@@ -19,7 +19,7 @@ Credge AI is an AI-driven personal finance coach designed to empower users with 
 
 Credge AI has three major components:
 
-1. **Synthetic Data Engine** (Bayesian + GANs)
+1. **Synthetic Data Engine** (Bayesian + GANs + LLMs)
 2. **Budget Classification & Optimization Agent** (LSTM, BERT, RoBERTa)
 3. **LLM Investment Advisor** (LLaMA, GPT, FinBERT)
 
