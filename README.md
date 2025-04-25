@@ -1,4 +1,4 @@
-# Financial Assistant
+# Credge - Your AI financial Coach
 
 Financial Assistant is a web application designed to help users manage their finances, optimize their budgets, and make informed investment decisions. The application uses Bayesian models to predict individual incomes based on demographic data and provides various tools and insights for financial planning.
 
