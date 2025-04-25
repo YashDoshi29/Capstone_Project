@@ -1,4 +1,4 @@
-![Credge AI Banner](https://yourbannerlink.com)
+<img src="Credge.png" alt="Credge AI Banner" width="200" height="200"/>
 
 # Credge AI – Your Financial Coach 🚀
 
