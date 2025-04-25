@@ -20,7 +20,7 @@ Credge AI is an AI-driven personal finance coach designed to empower users with 
 Credge AI has three major components:
 
 1. **Synthetic Data Engine** (Bayesian + GANs + LLMs)
-2. **Budget Classification & Optimization Agent** (LSTM, BERT, RoBERTa)
+2. **Budget Classification & Optimization Agent** (Logistic Regression, LSTM, BERT, LLaMA)
 3. **LLM Investment Advisor** (LLaMA, GPT, FinBERT)
 
 These modules work together through an interactive front-end, ensuring smooth data and decision flows.
