@@ -130,10 +130,13 @@ const Dashboard = () => {
     return acc;
   }, {});
 
-  const pieData = Object.keys(categoryData).map((key) => ({
+  const pieData = Object.keys(categoryData)
+  .filter((key) => categoryData[key] > 0)
+  .map((key) => ({
     name: key,
     value: categoryData[key],
-  }));
+}));
+
 
   const renderChart = () => {
     const renderActiveShape = (props) => {
