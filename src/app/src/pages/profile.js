@@ -3,8 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import {
   Box,
   Typography,
-  AppBar,
-  Toolbar,
   Button,
   Card,
   Grid,
@@ -15,8 +13,27 @@ import {
   TableContainer,
   TableHead,
   TableRow,
-  Paper
+  Paper,
+  Tabs,
+  Tab,
+  IconButton,
+  InputAdornment,
+  CircularProgress,
+  Alert,
+  Avatar,
+  Container
 } from '@mui/material';
+import {
+  Upload as UploadIcon,
+  CloudUpload as CloudUploadIcon,
+  Person as PersonIcon,
+  AttachMoney as AttachMoneyIcon,
+  Home as HomeIcon,
+  LocationOn as LocationIcon,
+  Male as MaleIcon,
+  Female as FemaleIcon,
+  Refresh as RefreshIcon
+} from '@mui/icons-material';
 import Papa from 'papaparse';
 
 const Profile = () => {
@@ -212,283 +229,321 @@ const Profile = () => {
   return (
     <Box
       sx={{
-        background: "radial-gradient(circle, #0f0f0f, #1c1c1c, #2f2f2f)",
+        background: "linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%)",
         minHeight: '100vh',
-        color: 'white'
+        color: '#ffffff',
+        py: 2,
+        px: { xs: 2, md: 4 }
       }}
     >
-      {/* App Bar */}
-      <AppBar position="fixed" sx={{ backgroundColor: 'transparent', boxShadow: 'none' }}>
-        <Toolbar sx={{ justifyContent: 'space-between' }}>
-          <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-            Financial Assistant
-          </Typography>
-          <Box>
-            {navItems.map((item) => (
-              <Button
-                key={item.name}
-                component="a"
-                href={item.path}
-                // For a smoother SPA experience, consider using "Link" from react-router-dom instead of "a"
-                sx={{
-                  color: 'white',
-                  '&:hover': {
-                    color: '#00c6ff'
-                  }
-                }}
-              >
-                {item.name}
-              </Button>
-            ))}
+      {/* Hero Section */}
+      <Box
+        sx={{
+          minHeight: '30vh',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          px: { xs: 2, md: 4 },
+          position: 'relative',
+          '&::before': {
+            content: '""',
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'radial-gradient(circle at center, rgba(255, 255, 255, 0.1) 0%, transparent 70%)',
+            pointerEvents: 'none',
+          }
+        }}
+      >
+        <Container maxWidth="lg">
+          <Box sx={{ textAlign: 'center' }}>
+            <Typography
+              variant="h1"
+              sx={{
+                fontWeight: 'bold',
+                color: '#ffffff',
+                fontSize: { xs: '2.5rem', md: '3.5rem' },
+                mb: 2,
+                lineHeight: 1.2,
+                textShadow: '0px 0px 10px rgba(255, 255, 255, 0.3)',
+              }}
+            >
+              Financial Data Management
+            </Typography>
+            <Typography
+              variant="h5"
+              sx={{
+                color: '#b3b3b3',
+                mb: 2,
+                lineHeight: 1.6,
+                fontSize: { xs: '1.1rem', md: '1.3rem' },
+              }}
+            >
+              Upload your financial statements or generate synthetic data to get started with personalized financial insights and recommendations.
+            </Typography>
           </Box>
-        </Toolbar>
-      </AppBar>
+        </Container>
+      </Box>
 
       {/* Main Content */}
-      <Box sx={{ pt: 12, px: 4, textAlign: 'center' }}>
-        <Typography variant="h3" sx={{ mb: 4, fontWeight: 700, color: '#FFB07C' }}>
-          TransactIQ
-        </Typography>
-
-        {/* Mode Toggle Buttons */}
-        <Box sx={{ display: 'flex', justifyContent: 'center', gap: 4, mb: 6 }}>
-          <Button
-            variant={mode === 'upload' ? 'contained' : 'outlined'}
-            onClick={() => handleModeChange('upload')}
-            sx={{
-              px: 6,
-              py: 2,
-              borderRadius: 2,
-              background: mode === 'upload'
-                ? 'linear-gradient(135deg, #00c6ff, #0072ff)'
-                : 'transparent',
-              color: mode === 'upload' ? 'white' : '#00c6ff',
-            }}
-          >
-            Upload Statement
-          </Button>
-          <Button
-            variant={mode === 'generate' ? 'contained' : 'outlined'}
-            onClick={() => handleModeChange('generate')}
-            sx={{
-              px: 6,
-              py: 2,
-              borderRadius: 2,
-              background: mode === 'generate'
-                ? 'linear-gradient(135deg, #6a5acd, #4f9df7)'
-                : 'transparent',
-              color: mode === 'generate' ? 'white' : '#6a5acd',
-            }}
-          >
-            Generate Data
-          </Button>
-        </Box>
-
-        {/* Content Card */}
-        <Card sx={{ maxWidth: 800, mx: 'auto', p: 4, background: '#2f2f2f' }}>
-          <form onSubmit={handleSubmit}>
-            {mode === 'upload' ? (
-              // Upload Statement Section
-              <Box sx={{ textAlign: 'center' }}>
-                <label htmlFor="file-upload">
-                  <input
-                    id="file-upload"
-                    type="file"
-                    accept=".csv,.pdf"
-                    onChange={handleFileChange}
-                    style={{ display: 'none' }}
-                  />
-                  <Button
-                    component="span"
-                    variant="contained"
-                    sx={{
-                      background: 'linear-gradient(135deg, #e0cfc1, #c2b4a3)',
-                      color: '#1a1a1a',
-                      mb: 2,
-                      px: 4,
-                      py: 2
-                    }}
-                  >
-                    📁 Choose File
-                  </Button>
-                </label>
-                {selectedFile && (
-                  <Typography variant="body2" sx={{ color: '#ccc', mb: 2 }}>
-                    Selected: {selectedFile.name}
-                  </Typography>
-                )}
-                {error && (
-                  <Typography color="error" sx={{ mb: 2 }}>
-                    {error}
-                  </Typography>
-                )}
-                <Button
-                  type="submit"
-                  variant="contained"
-                  disabled={loading || !selectedFile}
-                  sx={{
-                    background: 'linear-gradient(135deg, #a6e3e9, #71c9ce)',
-                    color: '#1a1a1a',
-                    px: 6,
-                    py: 2,
-                    width: '100%'
+      <Box sx={{ maxWidth: '1200px', mx: 'auto', mt: -4 }}>
+        <Grid container spacing={3}>
+          {/* Left Side - User Info */}
+          <Grid item xs={12} md={4}>
+            <Card 
+              sx={{ 
+                p: 2, 
+                background: 'rgba(26, 26, 26, 0.8)',
+                backdropFilter: 'blur(10px)',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                borderRadius: '20px',
+                height: '100%',
+                boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.3)'
+              }}
+            >
+              <Box sx={{ textAlign: 'center', mb: 2 }}>
+                <Avatar
+                  sx={{ 
+                    width: 80, 
+                    height: 80, 
+                    mx: 'auto',
+                    mb: 1,
+                    background: 'linear-gradient(45deg, rgba(255, 255, 255, 0.9) 30%, rgba(255, 255, 255, 0.7) 90%)',
+                    color: '#1a1a1a'
                   }}
                 >
-                  {loading ? 'Processing...' : 'Upload & Analyze'}
-                </Button>
+                  <PersonIcon sx={{ fontSize: 40 }} />
+                </Avatar>
+                <Typography variant="h6" sx={{ mb: 1, color: '#ffffff' }}>
+                  User Profile
+                </Typography>
+                <Typography variant="body2" sx={{ color: '#b3b3b3' }}>
+                  Manage your personal information
+                </Typography>
               </Box>
-            ) : (
-              // Generate Data Form
-              <Grid container spacing={3}>
-                <Grid item xs={4}>
-                  <TextField
-                    fullWidth
-                    label="Age"
-                    name="age"
-                    type="number"
-                    value={userData.age}
-                    onChange={handleInputChange}
-                    variant="filled"
-                    InputLabelProps={{ style: { color: '#fff' } }}
-                    InputProps={{ style: { color: '#fff' } }}
-                    sx={{ background: '#3a3a3a', borderRadius: 1 }}
+
+              <Box component="form" onSubmit={handleSubmit} sx={{ mt: 2 }}>
+                <TextField
+                  fullWidth
+                  label="Age"
+                  name="age"
+                  value={userData.age}
+                  onChange={handleInputChange}
+                  sx={{ mb: 2 }}
+                  InputLabelProps={{ style: { color: '#ffffff' } }}
+                  InputProps={{
+                    style: { color: '#ffffff' },
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <PersonIcon sx={{ color: '#b3b3b3' }} />
+                      </InputAdornment>
+                    ),
+                  }}
+                />
+                <TextField
+                  fullWidth
+                  label="Gender"
+                  name="gender"
+                  value={userData.gender}
+                  onChange={handleInputChange}
+                  sx={{ mb: 2 }}
+                  InputLabelProps={{ style: { color: '#ffffff' } }}
+                  InputProps={{
+                    style: { color: '#ffffff' },
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        {userData.gender === 'male' ? (
+                          <MaleIcon sx={{ color: '#b3b3b3' }} />
+                        ) : (
+                          <FemaleIcon sx={{ color: '#b3b3b3' }} />
+                        )}
+                      </InputAdornment>
+                    ),
+                  }}
+                />
+                <TextField
+                  fullWidth
+                  label="Household Size"
+                  name="householdSize"
+                  value={userData.householdSize}
+                  onChange={handleInputChange}
+                  sx={{ mb: 2 }}
+                  InputLabelProps={{ style: { color: '#ffffff' } }}
+                  InputProps={{
+                    style: { color: '#ffffff' },
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <HomeIcon sx={{ color: '#b3b3b3' }} />
+                      </InputAdornment>
+                    ),
+                  }}
+                />
+                <TextField
+                  fullWidth
+                  label="Annual Income"
+                  name="annualIncome"
+                  value={userData.annualIncome}
+                  onChange={handleInputChange}
+                  sx={{ mb: 2 }}
+                  InputLabelProps={{ style: { color: '#ffffff' } }}
+                  InputProps={{
+                    style: { color: '#ffffff' },
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <AttachMoneyIcon sx={{ color: '#b3b3b3' }} />
+                      </InputAdornment>
+                    ),
+                  }}
+                />
+                <TextField
+                  fullWidth
+                  label="Zipcode"
+                  name="zipcode"
+                  value={userData.zipcode}
+                  onChange={handleInputChange}
+                  InputLabelProps={{ style: { color: '#ffffff' } }}
+                  InputProps={{
+                    style: { color: '#ffffff' },
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <LocationIcon sx={{ color: '#b3b3b3' }} />
+                      </InputAdornment>
+                    ),
+                  }}
+                />
+              </Box>
+            </Card>
+          </Grid>
+
+          {/* Right Side - Data Management */}
+          <Grid item xs={12} md={8}>
+            <Card 
+              sx={{ 
+                p: 2, 
+                background: 'rgba(26, 26, 26, 0.8)',
+                backdropFilter: 'blur(10px)',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                borderRadius: '20px',
+                boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.3)'
+              }}
+            >
+              <Tabs
+                value={mode}
+                onChange={(e, newValue) => handleModeChange(newValue)}
+                sx={{ 
+                  mb: 3,
+                  '& .MuiTab-root': {
+                    color: '#b3b3b3',
+                    '&.Mui-selected': {
+                      color: '#ffffff',
+                    },
+                  },
+                }}
+              >
+                <Tab 
+                  value="upload" 
+                  label="Upload Statement" 
+                  icon={<UploadIcon />} 
+                  iconPosition="start"
+                />
+                <Tab 
+                  value="generate" 
+                  label="Generate Data" 
+                  icon={<CloudUploadIcon />} 
+                  iconPosition="start"
+                />
+              </Tabs>
+
+              {error && (
+                <Alert severity="error" sx={{ mb: 3, color: '#ffffff' }}>
+                  {error}
+                </Alert>
+              )}
+
+              {mode === 'upload' ? (
+                <Box sx={{ textAlign: 'center', py: 4 }}>
+                  <input
+                    accept=".csv,.pdf"
+                    style={{ display: 'none' }}
+                    id="raised-button-file"
+                    type="file"
+                    onChange={handleFileChange}
                   />
-                </Grid>
-                <Grid item xs={4}>
-                  <TextField
-                    fullWidth
-                    label="Gender"
-                    name="gender"
-                    value={userData.gender}
-                    onChange={handleInputChange}
-                    variant="filled"
-                    InputLabelProps={{ style: { color: '#fff' } }}
-                    InputProps={{ style: { color: '#fff' } }}
-                    sx={{ background: '#3a3a3a', borderRadius: 1 }}
-                  />
-                </Grid>
-                <Grid item xs={4}>
-                  <TextField
-                    fullWidth
-                    label="Household Size"
-                    name="householdSize"
-                    type="number"
-                    value={userData.householdSize}
-                    onChange={handleInputChange}
-                    variant="filled"
-                    InputLabelProps={{ style: { color: '#fff' } }}
-                    InputProps={{ style: { color: '#fff' } }}
-                    sx={{ background: '#3a3a3a', borderRadius: 1 }}
-                  />
-                </Grid>
-                <Grid item xs={6}>
-                  <TextField
-                    fullWidth
-                    label="Annual Income"
-                    name="annualIncome"
-                    type="number"
-                    value={userData.annualIncome}
-                    onChange={handleInputChange}
-                    variant="filled"
-                    InputLabelProps={{ style: { color: '#fff' } }}
-                    InputProps={{ style: { color: '#fff' } }}
-                    sx={{ background: '#3a3a3a', borderRadius: 1 }}
-                  />
-                </Grid>
-                <Grid item xs={6}>
-                  <TextField
-                    fullWidth
-                    label="Zipcode"
-                    name="zipcode"
-                    value={userData.zipcode}
-                    onChange={handleInputChange}
-                    variant="filled"
-                    InputLabelProps={{ style: { color: '#fff' } }}
-                    InputProps={{ style: { color: '#fff' } }}
-                    sx={{ background: '#3a3a3a', borderRadius: 1 }}
-                  />
-                </Grid>
-                {error && (
-                  <Grid item xs={12}>
-                    <Typography color="error">{error}</Typography>
-                  </Grid>
-                )}
-                <Grid item xs={12}>
+                  <label htmlFor="raised-button-file">
+                    <Button
+                      variant="contained"
+                      component="span"
+                      startIcon={<UploadIcon />}
+                      sx={{
+                        background: 'linear-gradient(45deg, rgba(255, 255, 255, 0.9) 30%, rgba(255, 255, 255, 0.7) 90%)',
+                        color: '#1a1a1a',
+                        boxShadow: '0 3px 5px 2px rgba(255, 255, 255, .2)',
+                        '&:hover': {
+                          background: 'linear-gradient(45deg, rgba(255, 255, 255, 0.7) 30%, rgba(255, 255, 255, 0.9) 90%)',
+                        },
+                      }}
+                    >
+                      Upload File
+                    </Button>
+                  </label>
+                  {selectedFile && (
+                    <Typography variant="body2" sx={{ mt: 2, color: '#b3b3b3' }}>
+                      Selected: {selectedFile.name}
+                    </Typography>
+                  )}
+                </Box>
+              ) : (
+                <Box sx={{ textAlign: 'center', py: 4 }}>
                   <Button
-                    type="submit"
-                    fullWidth
                     variant="contained"
+                    onClick={handleSubmit}
                     disabled={loading}
+                    startIcon={loading ? <CircularProgress size={20} /> : <CloudUploadIcon />}
                     sx={{
-                      mt: 2,
-                      py: 2,
-                      background: 'linear-gradient(135deg, #6a5acd, #4f9df7)',
+                      background: 'linear-gradient(45deg, rgba(255, 255, 255, 0.9) 30%, rgba(255, 255, 255, 0.7) 90%)',
+                      color: '#1a1a1a',
+                      boxShadow: '0 3px 5px 2px rgba(255, 255, 255, .2)',
                       '&:hover': {
-                        background: 'linear-gradient(135deg, #7a6aff, #3a8dff)'
-                      }
+                        background: 'linear-gradient(45deg, rgba(255, 255, 255, 0.7) 30%, rgba(255, 255, 255, 0.9) 90%)',
+                      },
+                      '&.Mui-disabled': {
+                        background: 'rgba(255, 255, 255, 0.12)',
+                      },
                     }}
                   >
                     {loading ? 'Generating...' : 'Generate Data'}
                   </Button>
-                </Grid>
-              </Grid>
-            )}
-          </form>
+                </Box>
+              )}
 
-          {/* If transactions were generated (mode === 'generate'), display them */}
-          {transactions.length > 0 && (
-            <Box sx={{ mt: 4 }}>
-              <Typography variant="h6" sx={{ mb: 2, color: '#FFB07C' }}>
-                Generated Transactions
-              </Typography>
-              <TableContainer component={Paper} sx={{ background: '#2f2f2f' }}>
-                <Table>
-                  <TableHead>
-                    <TableRow>
-                      {Object.keys(transactions[0]).map((key) => (
-                        <TableCell key={key} sx={{ color: '#fff !important' }}>
-                          {key}
-                        </TableCell>
-                      ))}
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {transactions.map((transaction, index) => (
-                      <TableRow key={index}>
-                        {Object.values(transaction).map((value, i) => (
-                          <TableCell key={i} sx={{ color: '#ccc !important' }}>
-                            {typeof value === 'object' ? JSON.stringify(value) : value}
-                          </TableCell>
-                        ))}
+              {transactions.length > 0 && (
+                <TableContainer component={Paper} sx={{ mt: 3, background: 'rgba(26, 26, 26, 0.8)' }}>
+                  <Table>
+                    <TableHead>
+                      <TableRow>
+                        <TableCell sx={{ color: '#ffffff' }}>Category</TableCell>
+                        <TableCell align="right" sx={{ color: '#ffffff' }}>Amount</TableCell>
+                        <TableCell align="right" sx={{ color: '#ffffff' }}>Date</TableCell>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </TableContainer>
-
-              {/* Action Buttons after data is generated */}
-              <Box sx={{ mt: 3, display: 'flex', gap: 2, justifyContent: 'center' }}>
-                <Button
-                  onClick={handleReset}
-                  variant="outlined"
-                  sx={{ color: '#00c6ff', borderColor: '#00c6ff' }}
-                >
-                  Generate Again
-                </Button>
-                <Button
-                  onClick={() => navigate('/dashboard')}
-                  variant="contained"
-                  sx={{
-                    background: '#00c6ff',
-                    '&:hover': { background: '#33d1ff' }
-                  }}
-                >
-                  Classify Transactions
-                </Button>
-              </Box>
-            </Box>
-          )}
-        </Card>
+                    </TableHead>
+                    <TableBody>
+                      {transactions.map((transaction, index) => (
+                        <TableRow key={index}>
+                          <TableCell sx={{ color: '#b3b3b3' }}>{transaction.Category}</TableCell>
+                          <TableCell align="right" sx={{ color: '#b3b3b3' }}>${transaction.Amount.toFixed(2)}</TableCell>
+                          <TableCell align="right" sx={{ color: '#b3b3b3' }}>{transaction['Transaction Date']}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              )}
+            </Card>
+          </Grid>
+        </Grid>
       </Box>
     </Box>
   );

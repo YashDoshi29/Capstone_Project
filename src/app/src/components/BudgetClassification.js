@@ -1,59 +1,123 @@
 // BudgetClassification.js
 import React from "react";
-import { Pie } from "react-chartjs-2";
-import { Chart as ChartJS, ArcElement, Tooltip, Legend } from "chart.js";
+import { Treemap, ResponsiveContainer } from 'recharts';
 
-// Register Chart.js components
-ChartJS.register(ArcElement, Tooltip, Legend);
+const COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff8042', '#00C805', '#0088FE'];
 
 const BudgetClassification = () => {
-  // Dummy data for expense classification categories
+  // Sample data for budget categories
   const data = {
-    labels: ["Housing", "Food", "Transportation", "Entertainment", "Utilities"],
-    datasets: [
+    name: 'Budget',
+    children: [
       {
-        data: [40, 25, 15, 10, 10],
-        backgroundColor: [
-          "rgba(54, 162, 235, 0.6)",
-          "rgba(255, 206, 86, 0.6)",
-          "rgba(75, 192, 192, 0.6)",
-          "rgba(255, 99, 132, 0.6)",
-          "rgba(153, 102, 255, 0.6)",
+        name: 'Housing',
+        value: 2500,
+        children: [
+          { name: 'Rent', value: 2000 },
+          { name: 'Utilities', value: 300 },
+          { name: 'Maintenance', value: 200 },
         ],
-        borderColor: [
-          "rgba(54, 162, 235, 1)",
-          "rgba(255, 206, 86, 1)",
-          "rgba(75, 192, 192, 1)",
-          "rgba(255, 99, 132, 1)",
-          "rgba(153, 102, 255, 1)",
+      },
+      {
+        name: 'Transportation',
+        value: 800,
+        children: [
+          { name: 'Car Payment', value: 400 },
+          { name: 'Gas', value: 200 },
+          { name: 'Public Transit', value: 200 },
         ],
-        borderWidth: 1,
+      },
+      {
+        name: 'Food',
+        value: 600,
+        children: [
+          { name: 'Groceries', value: 400 },
+          { name: 'Dining Out', value: 200 },
+        ],
+      },
+      {
+        name: 'Entertainment',
+        value: 400,
+        children: [
+          { name: 'Streaming Services', value: 100 },
+          { name: 'Hobbies', value: 200 },
+          { name: 'Events', value: 100 },
+        ],
+      },
+      {
+        name: 'Savings',
+        value: 1000,
+        children: [
+          { name: 'Emergency Fund', value: 500 },
+          { name: 'Retirement', value: 300 },
+          { name: 'Investments', value: 200 },
+        ],
+      },
+      {
+        name: 'Healthcare',
+        value: 300,
+        children: [
+          { name: 'Insurance', value: 200 },
+          { name: 'Medical Expenses', value: 100 },
+        ],
       },
     ],
   };
 
-  // Chart configuration options
-  const options = {
-    responsive: true,
-    plugins: {
-      legend: {
-        position: "top",
-        labels: {
-          color: "white", // Ensure the legend labels are visible on a dark background
-        },
-      },
-      title: {
-        display: true,
-        text: "Budget Classification",
-        color: "white",
-      },
-    },
-  };
-
   return (
-    <div>
-      <Pie data={data} options={options} />
+    <div style={{ width: '100%', height: '400px' }}>
+      <ResponsiveContainer width="100%" height="100%">
+        <Treemap
+          data={data.children}
+          dataKey="value"
+          ratio={4/3}
+          stroke="#fff"
+          fill="#8884d8"
+          content={<CustomizedContent colors={COLORS} />}
+        />
+      </ResponsiveContainer>
     </div>
+  );
+};
+
+const CustomizedContent = ({ root, depth, x, y, width, height, index, colors, name, value }) => {
+  return (
+    <g>
+      <rect
+        x={x}
+        y={y}
+        width={width}
+        height={height}
+        style={{
+          fill: depth < 2 ? colors[index % colors.length] : 'rgba(255,255,255,0)',
+          stroke: '#fff',
+          strokeWidth: 2 / (depth + 1e-10),
+          strokeOpacity: 1 / (depth + 1e-10),
+        }}
+      />
+      {depth === 1 ? (
+        <text
+          x={x + width / 2}
+          y={y + height / 2 + 7}
+          textAnchor="middle"
+          fill="#fff"
+          fontSize={14}
+        >
+          {name}
+        </text>
+      ) : null}
+      {depth === 1 ? (
+        <text
+          x={x + 4}
+          y={y + 18}
+          fill="#fff"
+          fontSize={16}
+          fillOpacity={0.9}
+        >
+          {index + 1}
+        </text>
+      ) : null}
+    </g>
   );
 };
 

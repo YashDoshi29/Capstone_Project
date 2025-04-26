@@ -1,31 +1,71 @@
 import React from "react";
-import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import { Box } from "@mui/material";
 import HomePage from "./pages/HomePage";
-import SignInPage from "./pages/Signin";
-import SignUpPage from "./pages/Signup";
-import "./styles/App.css";
+import SignIn from "./pages/Signin";
+import SignUp from "./pages/Signup";
 import Dashboard from "./pages/Dashboard";
-import InvestmentPage from "./pages/Investment.js";
-import FinancialNews from "./pages/FinancialNews.js";
-import Optimization from "./pages/Optimization.js";
-import Profile from "./pages/profile.js";
+import Optimization from "./pages/Optimization";
+import Investment from "./pages/Investment";
+import Profile from "./pages/profile";
+import FinancialNews from "./pages/FinancialNews";
+import Header from "./components/Header";
+
 const App = () => {
   return (
     <Router>
       <Routes>
-        {/* Render HomePage as the default route */}
-          <Route path="/index.html" element={<Navigate to="/" replace />} />
+        {/* Public routes without header */}
         <Route path="/" element={<HomePage />} />
-        {/* Render DashboardPage on the /dashboard route */}
-        <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/signin" element={<SignInPage />} />
-        <Route path="/signup" element={<SignUpPage />} />
-        <Route path="/Investment" element={<InvestmentPage />} />
-        <Route path="/financialnews" element={<FinancialNews />} />
-        <Route path="/optimization" element={<Optimization />} />
-        <Route path="/profile" element={<Profile />} />
-        {/* Redirect any other route to the HomePage */}
+        <Route path="/signin" element={<SignIn />} />
+        <Route path="/signup" element={<SignUp />} />
 
+        {/* Protected routes with header */}
+        <Route
+          path="/dashboard"
+          element={
+            <Box sx={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
+              <Header />
+              <Dashboard />
+            </Box>
+          }
+        />
+        <Route
+          path="/optimization"
+          element={
+            <Box sx={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
+              <Header />
+              <Optimization />
+            </Box>
+          }
+        />
+        <Route
+          path="/investment"
+          element={
+            <Box sx={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
+              <Header />
+              <Investment />
+            </Box>
+          }
+        />
+        <Route
+          path="/profile"
+          element={
+            <Box sx={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
+              <Header />
+              <Profile />
+            </Box>
+          }
+        />
+        <Route
+          path="/FinancialNews"
+          element={
+            <Box sx={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
+              <Header />
+              <FinancialNews />
+            </Box>
+          }
+        />
       </Routes>
     </Router>
   );
