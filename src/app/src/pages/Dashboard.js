@@ -34,10 +34,8 @@ const Dashboard = () => {
     );
   };
 
-  const [file, setFile] = useState(null);
   const [transactions, setTransactions] = useState([]);
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [error] = useState("");
   const [chartType, setChartType] = useState("radar");
 
   useEffect(() => {
@@ -52,73 +50,6 @@ const Dashboard = () => {
       setTransactions(JSON.parse(savedTransactions));
     }
   }, []);
-
-  const handleFileChange = (event) => {
-    setFile(event.target.files[0]);
-  };
-
-  const parsePDF = async (pdfFile) => {
-    setLoading(true);
-    setError("");
-    const formData = new FormData();
-    formData.append("file", pdfFile);
-    try {
-      const response = await fetch("http://127.0.0.1:5050/upload", {
-        method: "POST",
-        body: formData,
-      });
-      if (!response.ok) throw new Error("Error uploading PDF.");
-      const pdfText = await response.text();
-      const parsed = await new Response(new Blob([pdfText])).text();
-      const lines = parsed.trim().split("\n");
-      const headers = lines[0].split(",");
-      const transactions = lines.slice(1).map(line => {
-        const values = line.split(",");
-        const obj = {};
-        headers.forEach((h, i) => {
-          obj[h] = values[i];
-        });
-        return obj;
-      });
-      const formatted = formatTransactions(transactions);
-      saveTransactions(formatted);
-    } catch (error) {
-      console.error("Upload failed:", error);
-      setError("Please upload the file again: " + error.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const formatTransactions = (parsedTransactions) =>
-    parsedTransactions.map((transaction) => ({
-      Category: transaction.Category || "Unknown",
-      Amount: parseFloat(transaction.Amount) || 0,
-      "Transaction Date": new Date(transaction["Transaction Date"]).toLocaleDateString(),
-      "Posting Date": new Date(transaction["Posting Date"]).toLocaleDateString(),
-    }));
-
-  const saveTransactions = (formattedTransactions) => {
-    setTransactions(formattedTransactions);
-    localStorage.setItem("transactions", JSON.stringify(formattedTransactions));
-
-    const categoryTotals = formattedTransactions.reduce((acc, transaction) => {
-      if (!acc[transaction.Category]) acc[transaction.Category] = 0;
-      acc[transaction.Category] += transaction.Amount;
-      return acc;
-    }, {});
-
-    localStorage.setItem("categorizedSpending", JSON.stringify(categoryTotals));
-  };
-
-  const handleUpload = async () => {
-    if (!file) return setError("Please select a file first.");
-    if (file.type !== "application/pdf") {
-      setError("Unsupported file type. Please upload a PDF only.");
-      return;
-    }
-    await parsePDF(file);
-  };
 
   const categoryData = transactions.reduce((acc, transaction) => {
     const category = transaction.Category;
@@ -344,73 +275,7 @@ const Dashboard = () => {
               color: "#ffffff"
             }}>
               <CardContent>
-                <Box sx={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 2, mt: 2 }}>
-                  <label htmlFor="file-upload">
-                    <input
-                      id="file-upload"
-                      type="file"
-                      accept=".csv, .pdf"
-                      style={{ display: "none" }}
-                      onChange={handleFileChange}
-                    />
-                    <Button
-                      variant="contained"
-                      component="span"
-                      sx={{
-                        background: "linear-gradient(45deg, rgba(255, 255, 255, 0.9) 30%, rgba(255, 255, 255, 0.7) 90%)",
-                        color: "#1a1a1a",
-                        padding: "10px 22px",
-                        borderRadius: "10px",
-                        fontWeight: "600",
-                        textTransform: "uppercase",
-                        boxShadow: "0 4px 12px rgba(255, 255, 255, 0.2)",
-                        "&:hover": {
-                          background: "linear-gradient(45deg, rgba(255, 255, 255, 0.7) 30%, rgba(255, 255, 255, 0.9) 90%)",
-                          boxShadow: "0 6px 16px rgba(255, 255, 255, 0.3)",
-                        },
-                      }}
-                    >
-                      📁 Choose File
-                    </Button>
-                  </label>
                   
-                  <Button
-                    onClick={handleUpload}
-                    disabled={loading}
-                    sx={{
-                      background: "linear-gradient(45deg, rgba(255, 255, 255, 0.9) 30%, rgba(255, 255, 255, 0.7) 90%)",
-                      color: "#1a1a1a",
-                      padding: "10px 22px",
-                      borderRadius: "10px",
-                      fontWeight: "600",
-                      textTransform: "uppercase",
-                      boxShadow: "0 4px 12px rgba(255, 255, 255, 0.2)",
-                      "&:hover": {
-                        background: "linear-gradient(45deg, rgba(255, 255, 255, 0.7) 30%, rgba(255, 255, 255, 0.9) 90%)",
-                        boxShadow: "0 6px 16px rgba(255, 255, 255, 0.3)",
-                      },
-                    }}
-                  >
-                    {loading ? "Uploading..." : "Upload"}
-                  </Button>
-                </Box>
-                {file && (
-                  <Typography
-                    variant="body2"
-                    sx={{
-                      color: "#b3b3b3",
-                      textAlign: "center",
-                      fontStyle: "italic",
-                      mt: 1,
-                      whiteSpace: "nowrap",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      maxWidth: "100%",
-                    }}
-                  >
-                    Selected File: {file.name}
-                  </Typography>
-                )}
                 {error && <Typography sx={{ color: "#ff4444", mt: 2 }}>{error}</Typography>}
                 
                 <Box sx={{ display: "flex", justifyContent: "center", gap: 2, mt: 3 }}>
