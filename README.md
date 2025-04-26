@@ -1,6 +1,4 @@
-<p align="center">
-  <img src="Credge.png" alt="Credge AI Banner" width="200" height="200"/>
-</p>
+<img src="Credge.png" alt="Credge AI Banner" width="200" height="200"/>
 
 # Credge AI – Your Financial Coach 🚀
 
@@ -33,11 +31,11 @@ These modules work together through an interactive front-end, ensuring smooth da
 
 ```bash
 # Clone the repository
-git clone https://github.com/aman-jaglan/Capstone_Project.git
-cd Capstone_Project
+git clone https://github.com/yourusername/credge-ai.git
+cd credge-ai
 
 # Navigate to app directory
-cd src/app
+cd capstone/src/app
 
 # Install dependencies
 npm install
@@ -72,11 +70,6 @@ Access everything through the intuitive web interface!
 | ![React](https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB) | Frontend interactive app |
 | ![TensorFlow](https://img.shields.io/badge/TensorFlow-FF6F00?style=for-the-badge&logo=tensorflow&logoColor=white) | Model training (GANs, LSTM) |
 | ![OpenAI](https://img.shields.io/badge/OpenAI-412991?style=for-the-badge&logo=openai&logoColor=white) | LLM Investment Advisor (GPT, LLaMA) |
-| ![PyTorch](https://img.shields.io/badge/PyTorch-EE4C2C?style=for-the-badge&logo=pytorch&logoColor=white) | Deep learning framework for model building |
-| ![Hugging Face](https://img.shields.io/badge/HuggingFace-FFD21F?style=for-the-badge&logo=huggingface&logoColor=black) | Transformer models and NLP APIs |
-| ![Vantage API](https://img.shields.io/badge/Vantage-0085CA?style=for-the-badge&logo=datadog&logoColor=white) | Real-time stock market data API |
-| ![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white) | High-performance backend services |
-| ![Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white) | Interactive AI demos and dashboards |
 
 ---
 
@@ -110,7 +103,8 @@ Licensed under the [MIT License](./LICENSE).
 ## 🙏 Acknowledgments
 
 Special thanks to:
-- All contributors and mentors for their support.
+- Credge AI Academy mentors
 - Open-source libraries (Hugging Face, TensorFlow, OpenAI, SDV)
 - Financial datasets from DC Open Data & Census
+
 ---
