@@ -50,6 +50,55 @@ const Profile = () => {
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [file, setFile] = useState(null);
+  
+
+  const handleUpload = async () => {
+    if (!file) return setError("Please select a file first.");
+    if (file.type !== "application/pdf" && file.type !== "text/csv") {
+      setError("Unsupported file type. Please upload a PDF or CSV only.");
+      return;
+    }
+  
+    setLoading(true);
+    try {
+      let transactions = [];
+  
+      if (file.type === "text/csv") {
+        const csvText = await file.text();
+        transactions = await parseCSV(csvText);
+      } else if (file.type === "application/pdf") {
+        const pdfText = await parsePDF(file);
+        transactions = await parseCSV(pdfText);
+      }
+  
+      const formattedTransactions = transactions.map((t) => ({
+        Category: t.Category || "Unknown",
+        Amount: parseFloat(t.Amount) || 0,
+        "Transaction Date": new Date(t["Transaction Date"]).toLocaleDateString(),
+      }));
+  
+      // Save formatted transactions to localStorage
+      localStorage.setItem('transactions', JSON.stringify(formattedTransactions));
+  
+      // Optional: also prepare categorized spending for Pie Chart
+      const categoryTotals = formattedTransactions.reduce((acc, transaction) => {
+        acc[transaction.Category] = (acc[transaction.Category] || 0) + transaction.Amount;
+        return acc;
+      }, {});
+      localStorage.setItem('categorizedSpending', JSON.stringify(categoryTotals));
+  
+      // You can navigate to Dashboard or show a success message if you want
+      navigate('/dashboard');
+  
+    } catch (err) {
+      console.error(err);
+      setError("Failed to upload or parse file.");
+    } finally {
+      setLoading(false);
+    }
+  };
+  
 
   // Switch between "Upload Statement" and "Generate Data" modes
   const handleModeChange = (newMode) => {
@@ -67,6 +116,7 @@ const Profile = () => {
   // Store the selected file in local state
   const handleFileChange = (e) => {
     setSelectedFile(e.target.files[0]);
+    setFile(e.target.files[0]);
     setError('');
   };
 
@@ -96,7 +146,7 @@ const Profile = () => {
 
     // Adjust this URL to match your actual PDF-upload endpoint
     try {
-      const response = await fetch("http://localhost:8000/upload", {
+      const response = await fetch("http://localhost:5050/upload", {
         method: "POST",
         body: formData,
       });
@@ -472,22 +522,46 @@ const Profile = () => {
                     type="file"
                     onChange={handleFileChange}
                   />
+                  
                   <label htmlFor="raised-button-file">
                     <Button
-                      variant="contained"
-                      component="span"
-                      startIcon={<UploadIcon />}
-                      sx={{
-                        background: 'linear-gradient(45deg, rgba(255, 255, 255, 0.9) 30%, rgba(255, 255, 255, 0.7) 90%)',
-                        color: '#1a1a1a',
-                        boxShadow: '0 3px 5px 2px rgba(255, 255, 255, .2)',
-                        '&:hover': {
-                          background: 'linear-gradient(45deg, rgba(255, 255, 255, 0.7) 30%, rgba(255, 255, 255, 0.9) 90%)',
-                        },
-                      }}
-                    >
-                      Upload File
-                    </Button>
+                                          variant="contained"
+                                          component="span"
+                                          sx={{
+                                            background: "linear-gradient(45deg, rgba(255, 255, 255, 0.9) 30%, rgba(255, 255, 255, 0.7) 90%)",
+                                            color: "#1a1a1a",
+                                            padding: "10px 22px",
+                                            borderRadius: "10px",
+                                            fontWeight: "600",
+                                            textTransform: "uppercase",
+                                            boxShadow: "0 4px 12px rgba(255, 255, 255, 0.2)",
+                                            "&:hover": {
+                                              background: "linear-gradient(45deg, rgba(255, 255, 255, 0.7) 30%, rgba(255, 255, 255, 0.9) 90%)",
+                                              boxShadow: "0 6px 16px rgba(255, 255, 255, 0.3)",
+                                            },
+                                          }}
+                                        >
+                                          📁 Choose File
+                                        </Button>
+                    <Button
+                                        onClick={handleUpload}
+                                        disabled={loading}
+                                        sx={{
+                                          background: "linear-gradient(45deg, rgba(255, 255, 255, 0.9) 30%, rgba(255, 255, 255, 0.7) 90%)",
+                                          color: "#1a1a1a",
+                                          padding: "10px 22px",
+                                          borderRadius: "10px",
+                                          fontWeight: "600",
+                                          textTransform: "uppercase",
+                                          boxShadow: "0 4px 12px rgba(255, 255, 255, 0.2)",
+                                          "&:hover": {
+                                            background: "linear-gradient(45deg, rgba(255, 255, 255, 0.7) 30%, rgba(255, 255, 255, 0.9) 90%)",
+                                            boxShadow: "0 6px 16px rgba(255, 255, 255, 0.3)",
+                                          },
+                                        }}
+                                      >
+                                        {loading ? "Uploading..." : "Upload"}
+                                      </Button>
                   </label>
                   {selectedFile && (
                     <Typography variant="body2" sx={{ mt: 2, color: '#b3b3b3' }}>

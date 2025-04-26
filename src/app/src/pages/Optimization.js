@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Box, AppBar, Toolbar, Typography, Button, Grid, Collapse, Card,CardContent, TextField, Divider } from "@mui/material";
+import { Box, Typography, Button, Grid, Collapse, Card,CardContent, TextField, Divider } from "@mui/material";
 import { Link } from "react-router-dom";
 import { useSpring, animated } from "@react-spring/web";
 import { Fade } from "react-awesome-reveal";
@@ -394,14 +394,7 @@ const BudgetOptimization = () => {
     });
   };
 
-  const navItems = [
-    { name: 'ClassifyBot 💡', path: '/dashboard' },
-    { name: 'Optimization', path: '/optimization' },
-    { name: 'Investment', path: '/investment' },
-    { name: 'News', path: '/FinancialNews' },
-    { name: 'Logout', path: '/'}
-
-  ];
+ 
 
   return (
     <Box
@@ -412,56 +405,6 @@ const BudgetOptimization = () => {
         minHeight: "100vh",
       }}
     >
-      <AppBar position="fixed" sx={{ backgroundColor: 'transparent', boxShadow: 'none', padding: '0.5rem 1rem' }}>
-      <Toolbar sx={{ justifyContent: 'space-between' }}>
-        <Typography variant="h6" sx={{ fontWeight: 'bold', color: 'white' }}>
-          Financial Assistant
-        </Typography>
-        <Box>
-          {navItems.map((item) => (
-            <Button
-              key={item.name}
-              component={Link}
-              to={item.path}
-              variant="text"
-              sx={{
-                color: 'white',
-                position: 'relative',
-                '&:hover': {
-                  color: '#ADD8E6', 
-                  '&::after': {
-                    content: '""',
-                    position: 'absolute',
-                    width: '100%',
-                    height: '2px',
-                    bottom: 0,
-                    left: 0,
-                    backgroundColor: '#ADD8E6', 
-                    visibility: 'visible',
-                    transform: 'scaleX(1)',
-                    transition: 'all 0.3s ease-in-out',
-                  },
-                },
-                '&::after': {
-                  content: '""',
-                  position: 'absolute',
-                  width: '100%',
-                  height: '2px',
-                  bottom: 0,
-                  left: 0,
-                  backgroundColor: '#ADD8E6',
-                  visibility: 'hidden',
-                  transform: 'scaleX(0)',
-                  transition: 'all 0.3s ease-in-out',
-                },
-              }}
-            >
-              {item.name}
-            </Button>
-          ))}
-        </Box>
-      </Toolbar>
-    </AppBar>
 
       <Box sx={{ pt: "100px", textAlign: "center" }}>
         <animated.div style={heroAnimation}>
