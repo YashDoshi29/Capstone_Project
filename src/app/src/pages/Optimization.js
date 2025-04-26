@@ -243,17 +243,15 @@ const BudgetOptimization = () => {
 
     Based on the user's demographics and spending, provide personalized budget optimization suggestions.
 
-    - In grocery recommendations, include **different store names every time**, selected by you (the assistant), based on affordability and general popularity. Do not repeat the same stores across sessions.
+    - In grocery recommendations, include different store names based on affordability and general popularity.
 
     - Suggest specific action steps for groceries, shopping, travel, and other overspending areas. Suggest estimated monthly savings based on the user's profile.
 
-    - Ensure every response is **unique** and uses **varied store names** and examples.
-
-    - Give **Overall Monthly Savings** at the end every time in one line only.
+    - Ensure every response is unique and uses varied store names and examples.
 
     -- Adjust your focus on savings and spending based on the user's income level.
   
-  - Give **Overall Monthly Savings** at the end everytime in one line only.`,
+  - Give **Overall Monthly Savings** at the end everytime.`,
         },
       ],
       temperature: 0.9,
