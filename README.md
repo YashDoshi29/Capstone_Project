@@ -1,6 +1,6 @@
 <img src="Credge.png" alt="Credge AI Banner" width="200" height="200"/>
 
-# Credge AI – Your Financial Coach 🚀
+# Credge AI – Your Financial Coach
 
 Credge AI is an AI-driven personal finance coach designed to empower users with intelligent, data-driven money management. It generates realistic **synthetic financial data** to protect privacy while enabling rich model training ([paper](https://arxiv.org/pdf/2410.15653)). It automatically **classifies and optimizes budgets**, and offers an **LLM-based investment advisor** for personalized guidance.
 
@@ -19,8 +19,8 @@ Credge AI is an AI-driven personal finance coach designed to empower users with 
 
 Credge AI has three major components:
 
-1. **Synthetic Data Engine** (Bayesian + GANs)
-2. **Budget Classification & Optimization Agent** (LSTM, BERT, RoBERTa)
+1. **Synthetic Data Engine** (Bayesian + GANs + LLMs)
+2. **Budget Classification & Optimization Agent** (Logistic Regression, LSTM, BERT, LLaMA)
 3. **LLM Investment Advisor** (LLaMA, GPT, FinBERT)
 
 These modules work together through an interactive front-end, ensuring smooth data and decision flows.
@@ -31,11 +31,11 @@ These modules work together through an interactive front-end, ensuring smooth da
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/credge-ai.git
+git clone https://github.com/aman-jaglan/Credge.git
 cd credge-ai
 
 # Navigate to app directory
-cd capstone/src/app
+cd Credge/src/app
 
 # Install dependencies
 npm install
@@ -70,6 +70,11 @@ Access everything through the intuitive web interface!
 | ![React](https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB) | Frontend interactive app |
 | ![TensorFlow](https://img.shields.io/badge/TensorFlow-FF6F00?style=for-the-badge&logo=tensorflow&logoColor=white) | Model training (GANs, LSTM) |
 | ![OpenAI](https://img.shields.io/badge/OpenAI-412991?style=for-the-badge&logo=openai&logoColor=white) | LLM Investment Advisor (GPT, LLaMA) |
+| ![PyTorch](https://img.shields.io/badge/PyTorch-EE4C2C?style=for-the-badge&logo=pytorch&logoColor=white) | Deep learning framework for model building |
+| ![Hugging Face](https://img.shields.io/badge/HuggingFace-FFD21F?style=for-the-badge&logo=huggingface&logoColor=black) | Transformer models and NLP APIs |
+| ![Vantage API](https://img.shields.io/badge/Vantage-0085CA?style=for-the-badge&logo=datadog&logoColor=white) | Real-time stock market data API |
+| ![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white) | High-performance backend services |
+| ![Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white) | Interactive AI demos and dashboards |
 
 ---
 
@@ -105,6 +110,6 @@ Licensed under the [MIT License](./LICENSE).
 Special thanks to:
 - Credge AI Academy mentors
 - Open-source libraries (Hugging Face, TensorFlow, OpenAI, SDV)
-- Financial datasets from DC Open Data & Census
+- Financial datasets from DC Open Data, Census & Yelp Open Data.
 
 ---
