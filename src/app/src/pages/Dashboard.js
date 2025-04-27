@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from "react";
 import { Box, Typography, Button, Grid, Card, CardContent, TableContainer, Table, TableHead, TableBody, TableRow, TableCell } from "@mui/material";
-import { Box, Typography, Button, Grid, Card, CardContent, TableContainer, Table, TableHead, TableBody, TableRow, TableCell } from "@mui/material";
 import { Link } from "react-router-dom";
 import { useSpring, animated } from "@react-spring/web";
 import { Fade } from "react-awesome-reveal";
@@ -38,7 +37,7 @@ const Dashboard = () => {
   const [file] = useState(null);
   const [transactions, setTransactions] = useState([]);
   const [error, setError] = useState("");
-  const [setLoading] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [chartType, setChartType] = useState("donut");
 
   useEffect(() => {
