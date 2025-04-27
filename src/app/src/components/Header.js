@@ -4,10 +4,9 @@ import { Link, useNavigate } from "react-router-dom";
 import { styled } from "@mui/material/styles";
 
 const StyledAppBar = styled(AppBar)(({ theme }) => ({
-  background: "rgba(0, 0, 0, 0.9)",
+  background: "radial-gradient(circle, #0f0f0f, #1c1c1c, #2f2f2f)",
   backdropFilter: "blur(10px)",
   boxShadow: "none",
-  borderBottom: "1px solid rgba(255, 255, 255, 0.1)",
 }));
 
 const StyledButton = styled(Button)(({ theme }) => ({
