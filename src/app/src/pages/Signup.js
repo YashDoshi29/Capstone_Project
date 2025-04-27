@@ -49,7 +49,7 @@ const SignUpPage = () => {
 
     try {
       await createUserWithEmailAndPassword(auth, email, password);
-      navigate("/dashboard");
+      navigate("/profile");
     } catch (err) {
       setError(err.message);
     } finally {
@@ -63,7 +63,7 @@ const SignUpPage = () => {
 
     try {
       await signInWithPopup(auth, googleProvider);
-      navigate("/dashboard");
+      navigate("/profile");
     } catch (err) {
       setError(err.message);
     } finally {
