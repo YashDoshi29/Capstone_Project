@@ -1,13 +1,12 @@
 import requests
 import json
 from datetime import datetime
-from collections import Counter
+import time
 
-def test_single_customer(base_url: str = "http://0.0.0.0:8000"):
-    """Test the transaction generator API with a single customer profile"""
+def test_transaction_generator(base_url: str = "http://0.0.0.0:8000"):
+    """Simple test for transaction generator"""
     
-    # Single test case representing a typical user
-    test_case = {
+    test_profile = {
         "age": 30,
         "gender": "Female",
         "household_size": 2,
@@ -16,59 +15,72 @@ def test_single_customer(base_url: str = "http://0.0.0.0:8000"):
     }
     
     print("\n=== Testing Transaction Generator ===")
-    print("Customer Profile:")
-    for key, value in test_case.items():
-        print(f"  {key}: {value}")
+    print(f"Testing with profile: {json.dumps(test_profile, indent=2)}")
     
     try:
-        # Make API request
-        response = requests.post(f"{base_url}/generate", json=test_case, timeout=60)
+        start_time = time.time()
+        print("\nMaking API request...")
+        
+        response = requests.post(
+            f"{base_url}/generate",
+            json=test_profile,
+            timeout=120  # Increased timeout for batch processing
+        )
         
         if response.status_code != 200:
-            print(f"\n❌ API request failed with status code {response.status_code}")
+            print(f"❌ API request failed: {response.status_code}")
             print(f"Error: {response.text}")
             return
         
-        # Process successful response
         data = response.json()
         transactions = data.get("transactions", [])
         
-        # Collect unique merchants
-        merchants = Counter(tx['merchant_details']['name'] for tx in transactions)
+        if not transactions:
+            print("❌ No transactions generated")
+            return
         
-        print(f"\n=== Generated {len(transactions)} transactions ===")
+        # Basic validation and stats
+        valid_count = 0
+        total_amount = 0
+        merchants = set()
+        categories = set()
         
-        print("\nUnique Merchants Used:")
-        for merchant, count in merchants.items():
-            print(f"  {merchant}: {count} transaction(s)")
+        print("\nValidating transactions...")
+        for tx in transactions:
+            try:
+                # Basic validation
+                if (isinstance(tx, dict) and 
+                    isinstance(tx.get('amount'), (int, float)) and
+                    isinstance(tx.get('timestamp'), str) and
+                    isinstance(tx.get('merchant_details'), dict)):
+                    
+                    valid_count += 1
+                    total_amount += tx['amount']
+                    merchants.add(tx['merchant_details'].get('name', ''))
+                    categories.add(tx['merchant_details'].get('category', ''))
+            except Exception as e:
+                print(f"Invalid transaction: {str(e)}")
         
-        print("\nDetailed Transactions:")
-        for idx, tx in enumerate(transactions, 1):
-            print(f"\nTransaction #{idx}:")
-            print(f"  Amount: ${tx['amount']:.2f}")
-            print(f"  Date: {tx['timestamp']}")
-            print(f"  Merchant: {tx['merchant_details']['name']}")
-            print(f"  Category: {tx['merchant_details']['category']}")
-            print(f"  Location: {tx['merchant_details']['zipcode']}")
-            print(f"  Payment: {tx['payment_type']}")
+        # Print results
+        duration = time.time() - start_time
+        print(f"\n=== Results ===")
+        print(f"✅ Generated {len(transactions)} transactions in {duration:.1f} seconds")
+        print(f"Valid transactions: {valid_count}")
+        print(f"Total amount: ${total_amount:.2f}")
+        print(f"Average amount: ${total_amount/valid_count:.2f}")
+        print(f"Unique merchants: {len(merchants)}")
+        print(f"Unique categories: {len(categories)}")
         
+        # Show sample transactions
+        print("\nSample Transactions (first 2):")
+        for tx in transactions[:2]:
+            print(f"\nAmount: ${tx['amount']:.2f}")
+            print(f"Date: {tx['timestamp']}")
+            print(f"Merchant: {tx['merchant_details']['name']}")
+            print(f"Category: {tx['merchant_details']['category']}")
+            
     except Exception as e:
-        print(f"\n❌ Test failed with error: {str(e)}")
+        print(f"❌ Test failed: {str(e)}")
 
 if __name__ == "__main__":
-    try:
-        test_response = requests.post(
-            "https://api.groq.com/openai/v1/chat/completions",
-            headers={"Authorization": f"Bearer {API_KEY_Groq}"},
-            json={
-                "model": "llama3-70b-8192",
-                "messages": [{"role": "user", "content": "test"}],
-                "max_tokens": 5
-            }
-        )
-        if test_response.status_code != 200:
-            print(f"API Key test failed: {test_response.status_code}")
-            print(test_response.text)
-    except Exception as e:
-        print(f"API Key test failed: {str(e)}")
-    test_single_customer()
+    test_transaction_generator()

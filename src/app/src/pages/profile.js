@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Box,
@@ -21,7 +21,9 @@ import {
   CircularProgress,
   Alert,
   Avatar,
-  Container
+  Container,
+  LinearProgress,
+  TablePagination
 } from '@mui/material';
 import {
   Upload as UploadIcon,
@@ -47,10 +49,22 @@ const Profile = () => {
     zipcode: '',
   });
   const [selectedFile, setSelectedFile] = useState(null);
-  const [transactions, setTransactions] = useState([]);
+  const [transactions, setTransactions] = useState(() => {
+    const savedTransactions = localStorage.getItem('synthetic_transactions');
+    return savedTransactions ? JSON.parse(savedTransactions) : [];
+  });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [file, setFile] = useState(null);
+  const [showMappingStep, setShowMappingStep] = useState(false);
+  const [mappedTransactions, setMappedTransactions] = useState([]);
+  const [generationStatus, setGenerationStatus] = useState('');
+  const [generationProgress, setGenerationProgress] = useState(0);
+  const [totalTransactions, setTotalTransactions] = useState(0);
+  const [currentMerchants, setCurrentMerchants] = useState([]);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generatedTransactions, setGeneratedTransactions] = useState([]);
+  const [showTransactionTable, setShowTransactionTable] = useState(false);
   
 
   const handleUpload = async () => {
@@ -159,122 +173,229 @@ const Profile = () => {
     }
   };
 
-  // Submit handler for both "upload" and "generate"
+  // Add this category mapping function at the top of your Profile component
+  const mapToStandardCategories = (transactions) => {
+    const categoryMappings = {
+        // Food & Grocery
+        "groceries": "Food",
+        "deli_prepared_foods": "Food",
+        "bakery": "Food",
+        "packaged_foods": "Food",
+        "vending_snacks": "Food",
+        "ice_cream": "Food",
+        "seafood_market": "Food",
+        "food_truck": "Food",
+        "restaurant_dining": "Food",
+        "catering_services": "Food",
+        // Original categories
+        "Grocery Store": "Food",
+        "Delicatessen": "Food",
+        "Bakery": "Food",
+        "Food Products": "Food",
+        "Food Vending Machine": "Food",
+        "Ice Cream Manufacture": "Food",
+        "Marine Food Retail": "Food",
+        "Mobile Delicatessen": "Food",
+        "Restaurant": "Food",
+        "Caterers": "Food",
+
+        // Transportation
+        "gas_station": "Transportation",
+        "car_rental": "Transportation",
+        "car_wash": "Transportation",
+        "towing_services": "Transportation",
+        "towing_company": "Transportation",
+        "vehicle_storage": "Transportation",
+        "driving_lessons": "Transportation",
+        // Original categories
+        "Gasoline Dealer": "Transportation",
+        "Auto Rental": "Transportation",
+        "Auto Wash": "Transportation",
+        "Tow Truck": "Transportation",
+        "Tow Truck Business": "Transportation",
+        "Tow Truck Storage Lot": "Transportation",
+        "Driving School": "Transportation",
+
+        // Entertainment
+        "movie_theater": "Entertainment",
+        "event_venue": "Entertainment",
+        "live_theater": "Entertainment",
+        "bowling": "Entertainment",
+        "pool_hall": "Entertainment",
+        "skating_rink": "Entertainment",
+        "sports_events": "Entertainment",
+        "special_events": "Entertainment",
+        // Original categories
+        "Motion Picture Theatre": "Entertainment",
+        "Public Hall": "Entertainment",
+        "Theater (Live)": "Entertainment",
+        "Bowling Alley": "Entertainment",
+        "Billiard Parlor": "Entertainment",
+        "Skating Rink": "Entertainment",
+        "Athletic Exhibition": "Entertainment",
+        "Special Events": "Entertainment",
+
+        // Lodging
+        "hotel_lodging": "Lodging",
+        "motel_lodging": "Lodging",
+        "bnb_lodging": "Lodging",
+        "vacation_rental": "Lodging",
+        "boarding_house": "Lodging",
+        // Original categories
+        "Hotel": "Lodging",
+        "Inn And Motel": "Lodging",
+        "Bed and Breakfast": "Lodging",
+        "Vacation Rental": "Lodging",
+        "Boarding House": "Lodging",
+
+        // Personal Care
+        "beauty_services": "Personal Care",
+        "barber_services": "Personal Care",
+        "beauty_booth": "Personal Care",
+        "hair_braiding": "Personal Care",
+        "electrolysis": "Personal Care",
+        "skin_care": "Personal Care",
+        "nail_salon": "Personal Care",
+        "spa_services": "Personal Care",
+        "massage_parlor": "Personal Care",
+        // Original categories
+        "Beauty Shop": "Personal Care",
+        "Barber Shop": "Personal Care",
+        "Beauty Booth": "Personal Care",
+        "Beauty Shop Braiding": "Personal Care",
+        "Beauty Shop Electrology": "Personal Care",
+        "Beauty Shop Esthetics": "Personal Care",
+        "Beauty Shop Nails": "Personal Care",
+        "Health Spa": "Personal Care",
+        "Massage Establishment": "Personal Care"
+    };
+
+    return transactions.map(transaction => {
+        const originalCategory = transaction.merchant_details?.category || '';
+        const merchantName = transaction.merchant_details?.name || '';
+        
+        // First try exact match from the original category
+        let standardCategory = categoryMappings[originalCategory];
+
+        // If no match found, try matching the mapped category (from transaction_synthesizer)
+        if (!standardCategory && transaction.merchant_details?.mapped_category) {
+            standardCategory = categoryMappings[transaction.merchant_details.mapped_category];
+        }
+
+        // If still no match, try keyword matching in merchant name
+        if (!standardCategory) {
+            const merchantNameLower = merchantName.toLowerCase();
+            if (merchantNameLower.includes('restaurant') || merchantNameLower.includes('food') || 
+                merchantNameLower.includes('cafe') || merchantNameLower.includes('grocery')) {
+                standardCategory = 'Food';
+            } else if (merchantNameLower.includes('beauty') || merchantNameLower.includes('salon') || 
+                      merchantNameLower.includes('spa')) {
+                standardCategory = 'Personal Care';
+            } else if (merchantNameLower.includes('hotel') || merchantNameLower.includes('motel') || 
+                      merchantNameLower.includes('inn')) {
+                standardCategory = 'Lodging';
+            } else if (merchantNameLower.includes('theater') || merchantNameLower.includes('cinema') || 
+                      merchantNameLower.includes('entertainment')) {
+                standardCategory = 'Entertainment';
+            } else if (merchantNameLower.includes('auto') || merchantNameLower.includes('car') || 
+                      merchantNameLower.includes('gas')) {
+                standardCategory = 'Transportation';
+            }
+        }
+
+        // Default to 'Other' if no category match found
+        standardCategory = standardCategory || 'Other';
+
+        return {
+            Category: standardCategory,
+            Amount: parseFloat(transaction.amount),
+            "Transaction Date": new Date(transaction.timestamp).toLocaleDateString(),
+            Description: merchantName,
+            OriginalCategory: originalCategory
+        };
+    });
+  };
+
+  // Add this function to help debug category mappings
+  const logCategoryDistribution = (transactions) => {
+    const distribution = transactions.reduce((acc, t) => {
+      acc[t.Category] = (acc[t.Category] || 0) + 1;
+      return acc;
+    }, {});
+    
+    console.log('Category Distribution:', distribution);
+    return distribution;
+  };
+
+  // Add a function to clear transactions
+  const handleClearTransactions = () => {
+    if (window.confirm('Are you sure you want to clear existing transactions? This will allow you to generate new ones.')) {
+      setTransactions([]);
+      localStorage.removeItem('synthetic_transactions');
+      localStorage.removeItem('transactions'); // Clear mapped transactions
+      localStorage.removeItem('categorizedSpending');
+      setUserData({
+        age: '',
+        gender: '',
+        householdSize: '',
+        annualIncome: '',
+        zipcode: '',
+      });
+    }
+  };
+
+  // Modify the handleSubmit function
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
-
-    if (mode === 'upload') {
-      // Make sure we have a file
-      if (!selectedFile) {
-        setError("Please select a file first.");
-        return;
-      }
-
-      setLoading(true);
-      try {
-        let formattedTransactions = [];
-
-        // Handle CSV
-        if (selectedFile.type === "text/csv") {
-          const csvText = await selectedFile.text();
-          const parsed = await parseCSV(csvText);
-          formattedTransactions = parsed.map((t) => ({
-            Category: t.Category || "Unknown",
-            Amount: parseFloat(t.Amount) || 0,
-            "Transaction Date": new Date(t["Transaction Date"]).toLocaleDateString(),
-          }));
-        }
-        // Handle PDF
-        else if (selectedFile.type === "application/pdf") {
-          const pdfText = await parsePDF(selectedFile);
-          const parsed = await parseCSV(pdfText);
-          formattedTransactions = parsed.map((t) => ({
-            Category: t.Category || "Unknown",
-            Amount: parseFloat(t.Amount) || 0,
-            "Transaction Date": new Date(t["Transaction Date"]).toLocaleDateString(),
-          }));
-        } else {
-          throw new Error("Unsupported file type. Please upload CSV or PDF.");
-        }
-
-        // Optionally store in localStorage for use in /dashboard
-        localStorage.setItem('transactions', JSON.stringify(formattedTransactions));
-
-        // If you also want to show them right here, uncomment:
-        // setTransactions(formattedTransactions);
-
-        // Navigate to the dashboard (or wherever you want them displayed)
-        navigate('/dashboard');
-      } catch (err) {
-        setError(err.message);
-      } finally {
-        setLoading(false);
-      }
-    } else if (mode === 'generate') {
-      // Validate the user form fields
-      const { age, gender, householdSize, annualIncome, zipcode } = userData;
-      if (!age || !gender || !householdSize || !annualIncome || !zipcode) {
-        setError("Please fill in all fields.");
-        return;
-      }
-
-      setLoading(true);
-      try {
-        // Adjust the URL to your actual data-generation endpoint
-        const response = await fetch("http://0.0.0.0:8000/generate", {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            age: Number(age),
-            gender,
-            household_size: Number(householdSize),
-            income: Number(annualIncome),
-            zipcode
-          }),
-        });
-
-        if (!response.ok) throw new Error("Network response was not ok");
-
-        const data = await response.json();
-        console.log("Raw server response:", data); // Log the raw response
-
-        // Ensure we're getting the transactions array
-        const newTransactions = Array.isArray(data) ? data : 
-                              (data.transactions || []);
-
-        console.log("Transactions before formatting:", newTransactions); // Log before formatting
-
-        // Format the transactions properly
-        const formattedTransactions = newTransactions.map(transaction => {
-          // Log each transaction before formatting
-          console.log("Processing transaction:", transaction);
-          
-          // Extract category and merchant name from merchant_details
-          const category = transaction.merchant_details?.category || 'Unknown';
-          const merchantName = transaction.merchant_details?.name || 'Unknown Merchant';
-          
-          const formatted = {
-            Category: category.charAt(0).toUpperCase() + category.slice(1), // Capitalize first letter
-            Amount: parseFloat(transaction.amount || 0),
-            "Transaction Date": new Date(transaction.timestamp).toLocaleDateString(),
-            Description: `${merchantName} (${transaction.payment_type})`
-          };
-
-          console.log("Formatted transaction:", formatted);
-          return formatted;
-        });
-
-        console.log("Final formatted transactions:", formattedTransactions);
-        setTransactions(formattedTransactions);
-        setError('');
-      } catch (err) {
-        setError(err.message);
-        console.error("Error generating data:", err);
-      } finally {
-        setLoading(false);
-      }
+    if (transactions.length > 0) {
+      setError("Please clear existing transactions before generating new ones.");
+      return;
     }
+
+    // Validate the user form fields
+    const { age, gender, householdSize, annualIncome, zipcode } = userData;
+    if (!age || !gender || !householdSize || !annualIncome || !zipcode) {
+      setError("Please fill in all fields.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const response = await fetch("http://0.0.0.0:8000/generate", {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          age: Number(age),
+          gender,
+          household_size: Number(householdSize),
+          income: Number(annualIncome),
+          zipcode
+        }),
+      });
+
+      if (!response.ok) throw new Error("Network response was not ok");
+
+      const data = await response.json();
+      const newTransactions = Array.isArray(data) ? data : (data.transactions || []);
+      
+      // Save to localStorage and state
+      localStorage.setItem('synthetic_transactions', JSON.stringify(newTransactions));
+      setTransactions(newTransactions);
+      setError('');
+    } catch (err) {
+      setError(err.message);
+      console.error("Error generating data:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Add a new function to handle the "Next Step" action
+  const handleNextStep = () => {
+    const mappedTxns = mapToStandardCategories(transactions);
+    setMappedTransactions(mappedTxns);
+    localStorage.setItem('transactions', JSON.stringify(mappedTxns));
+    navigate('/dashboard');
   };
 
   // Reset form and clear transactions
@@ -288,6 +409,376 @@ const Profile = () => {
     });
     setTransactions([]);
     setError('');
+  };
+
+  const handleMapAndNavigate = () => {
+    try {
+      setLoading(true);
+      
+      // Map the transactions
+      const mappedTransactions = mapToStandardCategories(transactions);
+      
+      // Log category distribution
+      console.log('Original Transactions:', transactions);
+      console.log('Mapped Transactions:', mappedTransactions);
+      const distribution = logCategoryDistribution(mappedTransactions);
+      
+      // Alert if too many "Other" categories
+      const otherCount = distribution['Other'] || 0;
+      const totalCount = mappedTransactions.length;
+      const otherPercentage = (otherCount / totalCount) * 100;
+      
+      if (otherPercentage > 20) {
+        console.warn(`Warning: ${otherPercentage.toFixed(1)}% of transactions mapped to 'Other' category`);
+      }
+      
+      // Save to localStorage
+      localStorage.setItem('transactions', JSON.stringify(mappedTransactions));
+      
+      // Calculate and save category totals
+      const categoryTotals = mappedTransactions.reduce((acc, transaction) => {
+        acc[transaction.Category] = (acc[transaction.Category] || 0) + transaction.Amount;
+        return acc;
+      }, {});
+      localStorage.setItem('categorizedSpending', JSON.stringify(categoryTotals));
+      
+      // Navigate to dashboard
+      navigate('/dashboard');
+    } catch (error) {
+      console.error('Error mapping transactions:', error);
+      setError('Failed to process transactions. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const generateSyntheticTransactions = async () => {
+    // Validate input data
+    const requestData = {
+        age: parseInt(userData.age),
+        gender: userData.gender,
+        household_size: parseInt(userData.householdSize),
+        income: parseFloat(userData.annualIncome),
+        zipcode: userData.zipcode
+    };
+
+    if (!requestData.age || !requestData.gender || !requestData.household_size || 
+        !requestData.income || !requestData.zipcode) {
+        setError('Please fill in all fields');
+        return;
+    }
+
+    setIsGenerating(true);
+    setGeneratedTransactions([]);
+    setGenerationProgress(0);
+    setGenerationStatus('Initializing connection...');
+    setError('');
+
+    try {
+        const response = await fetch('http://localhost:8000/generate', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(requestData)
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+
+        while (true) {
+            const { value, done } = await reader.read();
+            
+            if (done) {
+                console.log("Stream complete");
+                break;
+            }
+
+            const chunk = decoder.decode(value);
+            const lines = chunk.split('\n');
+
+            for (const line of lines) {
+                if (line.trim() && line.startsWith('data:')) {
+                    let rawData = '';
+                    try {
+                        rawData = line.slice(5).trim();
+                        if (!rawData) continue;
+
+                        const data = JSON.parse(rawData);
+                        
+                        // Update UI states
+                        if (data.message) setGenerationStatus(data.message);
+                        if (data.total) setTotalTransactions(data.total);
+                        if (data.progress !== undefined) setGenerationProgress(data.progress);
+                        if (data.merchants) setCurrentMerchants(data.merchants);
+                        if (data.transactions) {
+                            setGeneratedTransactions(prev => [...prev, ...data.transactions]);
+                        }
+
+                        // Handle completion
+                        if (data.status === 'complete') {
+                            console.log('Generation complete:', data);
+                            setGenerationStatus('Generation complete!');
+                            if (data.transactions) {
+                                const mappedTransactions = mapToStandardCategories(data.transactions);
+                                setGeneratedTransactions(data.transactions); // Keep original for the table view
+                                
+                                // Save mapped transactions for dashboard
+                                localStorage.setItem('transactions', JSON.stringify(mappedTransactions));
+                                
+                                // Calculate and save category totals
+                                const categoryTotals = mappedTransactions.reduce((acc, transaction) => {
+                                    acc[transaction.Category] = (acc[transaction.Category] || 0) + transaction.Amount;
+                                    return acc;
+                                }, {});
+                                localStorage.setItem('categorizedSpending', JSON.stringify(categoryTotals));
+                            }
+                            setIsGenerating(false);
+                            setShowTransactionTable(true);
+                            return;
+                        }
+
+                        // Handle errors
+                        if (data.status === 'error') {
+                            throw new Error(data.message || 'Generation failed');
+                        }
+                    } catch (e) {
+                        console.error('Error parsing SSE data:', e, 'Raw data:', rawData);
+                        setError(`Error during generation: ${e.message}`);
+                        setIsGenerating(false);
+                        return;
+                    }
+                }
+            }
+        }
+    } catch (error) {
+        console.error('Generation failed:', error);
+        setError(`Failed to generate transactions: ${error.message}`);
+        setIsGenerating(false);
+    } finally {
+        // Ensure generation state is properly cleaned up
+        if (isGenerating) {
+            setIsGenerating(false);
+        }
+    }
+  };
+
+  // Update the GenerationProgress component
+  const GenerationProgress = () => {
+    if (!isGenerating && !generatedTransactions.length) return null;
+
+    return (
+        <Card sx={{
+            mt: 3,
+            p: 3,
+            background: 'rgba(26, 26, 26, 0.8)',
+            backdropFilter: 'blur(10px)',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+            borderRadius: '20px',
+            boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.3)',
+            color: '#ffffff'
+        }}>
+            {/* Status Header */}
+            <Box sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 2 }}>
+                <Typography variant="h6">
+                    Generation Status
+                </Typography>
+                {isGenerating && (
+                    <CircularProgress size={20} sx={{ color: '#00C49F' }} />
+                )}
+            </Box>
+
+            {/* Status Message */}
+            <Typography sx={{ 
+                color: error ? '#ff6b6b' : '#00C49F', 
+                mb: 2 
+            }}>
+                {error || generationStatus}
+            </Typography>
+
+            {/* Progress Bar */}
+            {totalTransactions > 0 && (
+                <Box sx={{ mb: 3 }}>
+                    <LinearProgress
+                        variant="determinate"
+                        value={(generationProgress / totalTransactions) * 100}
+                        sx={{
+                            height: 8,
+                            borderRadius: 4,
+                            backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                            '& .MuiLinearProgress-bar': {
+                                backgroundColor: '#00C49F'
+                            }
+                        }}
+                    />
+                    <Typography variant="body2" sx={{ mt: 1, color: '#b3b3b3' }}>
+                        {generationProgress} of {totalTransactions} transactions
+                    </Typography>
+                </Box>
+            )}
+
+            {/* Generation Log */}
+            <Box sx={{
+                mt: 2,
+                p: 2,
+                backgroundColor: 'rgba(0, 0, 0, 0.3)',
+                borderRadius: '10px',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                fontFamily: 'monospace',
+                maxHeight: '400px',
+                overflow: 'auto'
+            }}>
+                {/* Current Merchants */}
+                {currentMerchants?.length > 0 && (
+                    <Box sx={{ mb: 2 }}>
+                        <Typography sx={{ color: '#4CAF50', fontSize: '0.9rem' }}>
+                            Processing Merchants:
+                        </Typography>
+                        {currentMerchants.map((merchant, idx) => (
+                            <Typography key={idx} sx={{ 
+                                color: '#b3b3b3', 
+                                ml: 2, 
+                                fontSize: '0.85rem' 
+                            }}>
+                                → {merchant}
+                            </Typography>
+                        ))}
+                    </Box>
+                )}
+
+                {/* Latest Transactions */}
+                {generatedTransactions?.length > 0 && (
+                    <Box>
+                        <Typography sx={{ color: '#4CAF50', fontSize: '0.9rem' }}>
+                            Latest Transactions:
+                        </Typography>
+                        {generatedTransactions.slice(-5).map((tx, idx) => (
+                            <Typography key={idx} sx={{ 
+                                color: '#b3b3b3', 
+                                ml: 2, 
+                                fontSize: '0.85rem' 
+                            }}>
+                                → ${tx.amount.toFixed(2)} at {tx.merchant_details.name}
+                            </Typography>
+                        ))}
+                    </Box>
+                )}
+            </Box>
+        </Card>
+    );
+  };
+
+  // Add this new component for the completion view
+  const CompletionView = ({ transactions }) => {
+    const [page, setPage] = useState(0);
+    const [rowsPerPage, setRowsPerPage] = useState(10);
+
+    const handleNavigateToDashboard = () => {
+        navigate('/dashboard');
+    };
+
+    return (
+        <Card sx={{
+            mt: 3,
+            p: 3,
+            background: 'rgba(26, 26, 26, 0.8)',
+            backdropFilter: 'blur(10px)',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+            borderRadius: '20px',
+            boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.3)',
+            color: '#ffffff'
+        }}>
+            <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Typography variant="h6">
+                    Generated Transactions
+                </Typography>
+                <Button
+                    variant="contained"
+                    onClick={handleNavigateToDashboard}
+                    sx={{
+                        background: 'linear-gradient(45deg, #00C49F 30%, #00A3FF 90%)',
+                        color: 'white',
+                        '&:hover': {
+                            background: 'linear-gradient(45deg, #00A3FF 30%, #00C49F 90%)',
+                        }
+                    }}
+                >
+                    View in Dashboard
+                </Button>
+            </Box>
+
+            <TableContainer sx={{ 
+                maxHeight: 440,
+                backgroundColor: 'rgba(0, 0, 0, 0.2)',
+                borderRadius: '10px'
+            }}>
+                <Table stickyHeader>
+                    <TableHead>
+                        <TableRow>
+                            <TableCell sx={{ backgroundColor: 'rgba(0, 0, 0, 0.5)', color: '#ffffff' }}>
+                                Date
+                            </TableCell>
+                            <TableCell sx={{ backgroundColor: 'rgba(0, 0, 0, 0.5)', color: '#ffffff' }}>
+                                Merchant
+                            </TableCell>
+                            <TableCell sx={{ backgroundColor: 'rgba(0, 0, 0, 0.5)', color: '#ffffff' }}>
+                                Original Category
+                            </TableCell>
+                            <TableCell sx={{ backgroundColor: 'rgba(0, 0, 0, 0.5)', color: '#ffffff' }}>
+                                Mapped Category
+                            </TableCell>
+                            <TableCell sx={{ backgroundColor: 'rgba(0, 0, 0, 0.5)', color: '#ffffff' }}>
+                                Amount
+                            </TableCell>
+                        </TableRow>
+                    </TableHead>
+                    <TableBody>
+                        {transactions
+                            .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+                            .map((transaction, index) => {
+                                const mappedCategory = mapToStandardCategories([transaction])[0].Category;
+                                return (
+                                    <TableRow key={index} hover>
+                                        <TableCell sx={{ color: '#b3b3b3' }}>
+                                            {new Date(transaction.timestamp).toLocaleDateString()}
+                                        </TableCell>
+                                        <TableCell sx={{ color: '#b3b3b3' }}>
+                                            {transaction.merchant_details.name}
+                                        </TableCell>
+                                        <TableCell sx={{ color: '#b3b3b3' }}>
+                                            {transaction.merchant_details.category}
+                                        </TableCell>
+                                        <TableCell sx={{ color: '#b3b3b3' }}>
+                                            {mappedCategory}
+                                        </TableCell>
+                                        <TableCell sx={{ color: '#b3b3b3' }}>
+                                            ${transaction.amount.toFixed(2)}
+                                        </TableCell>
+                                    </TableRow>
+                                );
+                            })}
+                    </TableBody>
+                </Table>
+            </TableContainer>
+            
+            <TablePagination
+                component="div"
+                count={transactions.length}
+                page={page}
+                onPageChange={(event, newPage) => setPage(newPage)}
+                rowsPerPage={rowsPerPage}
+                onRowsPerPageChange={(event) => {
+                    setRowsPerPage(parseInt(event.target.value, 10));
+                    setPage(0);
+                }}
+                sx={{ color: '#ffffff' }}
+            />
+        </Card>
+    );
   };
 
   return (
@@ -588,9 +1079,9 @@ const Profile = () => {
                   <Box sx={{ display: "flex", justifyContent: "center", mb: 3 }}>
                     <Button
                       variant="contained"
-                      onClick={handleSubmit}
-                      disabled={loading}
-                      startIcon={loading ? <CircularProgress size={20} /> : <CloudUploadIcon />}
+                      onClick={generateSyntheticTransactions}
+                      disabled={isGenerating}
+                      startIcon={isGenerating ? <CircularProgress size={20} /> : <CloudUploadIcon />}
                       sx={{
                         background: "linear-gradient(45deg, rgba(255, 255, 255, 0.9) 30%, rgba(255, 255, 255, 0.7) 90%)",
                         color: "#1a1a1a",
@@ -603,122 +1094,100 @@ const Profile = () => {
                         },
                       }}
                     >
-                      {loading ? 'Generating...' : 'Generate Data'}
+                      {isGenerating ? 'Generating...' : 'Generate Data'}
                     </Button>
                   </Box>
 
                   {transactions.length > 0 ? (
-                    <TableContainer component={Paper} sx={{ 
-                      background: "rgba(26, 26, 26, 0.8)",
-                      backdropFilter: "blur(10px)",
-                      borderRadius: "20px",
-                      border: "1px solid rgba(255, 255, 255, 0.1)",
-                      boxShadow: "0 8px 32px 0 rgba(0, 0, 0, 0.3)",
-                      maxHeight: "500px",
-                      overflow: "auto",
-                      "&::-webkit-scrollbar": {
-                        width: "8px",
-                      },
-                      "&::-webkit-scrollbar-track": {
-                        background: "rgba(255, 255, 255, 0.1)",
-                        borderRadius: "4px",
-                      },
-                      "&::-webkit-scrollbar-thumb": {
-                        background: "rgba(255, 255, 255, 0.2)",
-                        borderRadius: "4px",
-                        "&:hover": {
-                          background: "rgba(255, 255, 255, 0.3)",
-                        },
-                      },
-                    }}>
-                      <Table stickyHeader>
-                        <TableHead>
-                          <TableRow>
-                            <TableCell sx={{ 
-                              color: "#ffffff", 
-                              borderColor: "rgba(255, 255, 255, 0.1)",
-                              fontWeight: "bold",
-                              fontSize: "0.9rem",
-                              background: "rgba(26, 26, 26, 0.9)",
-                            }}>
-                              Date
-                            </TableCell>
-                            <TableCell sx={{ 
-                              color: "#ffffff", 
-                              borderColor: "rgba(255, 255, 255, 0.1)",
-                              fontWeight: "bold",
-                              fontSize: "0.9rem",
-                              background: "rgba(26, 26, 26, 0.9)",
-                            }}>
-                              Category
-                            </TableCell>
-                            <TableCell sx={{ 
-                              color: "#ffffff", 
-                              borderColor: "rgba(255, 255, 255, 0.1)",
-                              fontWeight: "bold",
-                              fontSize: "0.9rem",
-                              background: "rgba(26, 26, 26, 0.9)",
-                            }}>
-                              Description
-                            </TableCell>
-                            <TableCell align="right" sx={{ 
-                              color: "#ffffff", 
-                              borderColor: "rgba(255, 255, 255, 0.1)",
-                              fontWeight: "bold",
-                              fontSize: "0.9rem",
-                              background: "rgba(26, 26, 26, 0.9)",
-                            }}>
-                              Amount
-                            </TableCell>
-                          </TableRow>
-                        </TableHead>
-                        <TableBody>
-                          {transactions.map((transaction, index) => (
-                            <TableRow 
-                              key={index}
-                              sx={{ 
-                                '&:nth-of-type(odd)': {
-                                  backgroundColor: 'rgba(255, 255, 255, 0.03)',
-                                },
-                                '&:hover': {
-                                  backgroundColor: 'rgba(255, 255, 255, 0.05)',
-                                },
-                              }}
-                            >
-                              <TableCell sx={{ 
-                                color: "#b3b3b3", 
-                                borderColor: "rgba(255, 255, 255, 0.1)",
-                                fontSize: "0.85rem",
-                              }}>
-                                {transaction?.["Transaction Date"] ? new Date(transaction["Transaction Date"]).toLocaleDateString() : 'N/A'}
-                              </TableCell>
-                              <TableCell sx={{ 
-                                color: "#b3b3b3", 
-                                borderColor: "rgba(255, 255, 255, 0.1)",
-                                fontSize: "0.85rem",
-                              }}>
-                                {transaction?.Category || 'Unknown'}
-                              </TableCell>
-                              <TableCell sx={{ 
-                                color: "#b3b3b3", 
-                                borderColor: "rgba(255, 255, 255, 0.1)",
-                                fontSize: "0.85rem",
-                              }}>
-                                {transaction?.Description || 'No description'}
-                              </TableCell>
-                              <TableCell align="right" sx={{ 
-                                color: (transaction?.Amount || 0) < 0 ? "#ff4444" : "#4CAF50",
-                                borderColor: "rgba(255, 255, 255, 0.1)",
-                                fontSize: "0.85rem",
-                                fontWeight: "bold",
-                              }}>
-                                ${Math.abs(transaction?.Amount || 0).toFixed(2)}
-                              </TableCell>
+                    <Box>
+                      <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Typography variant="h6" sx={{ color: '#ffffff' }}>
+                          Generated Transactions: {transactions.length}
+                        </Typography>
+                        <Button
+                          variant="outlined"
+                          color="error"
+                          onClick={handleClearTransactions}
+                          sx={{
+                            borderColor: 'rgba(255, 99, 71, 0.5)',
+                            color: 'tomato',
+                            '&:hover': {
+                              borderColor: 'tomato',
+                              backgroundColor: 'rgba(255, 99, 71, 0.1)',
+                            },
+                          }}
+                        >
+                          Clear & Generate New
+                        </Button>
+                      </Box>
+                      
+                      <TableContainer component={Paper} sx={{ 
+                        background: "rgba(26, 26, 26, 0.8)",
+                        backdropFilter: "blur(10px)",
+                        borderRadius: "20px",
+                        border: "1px solid rgba(255, 255, 255, 0.1)",
+                        boxShadow: "0 8px 32px 0 rgba(0, 0, 0, 0.3)",
+                        maxHeight: "500px",
+                        overflow: "auto",
+                      }}>
+                        <Table>
+                          <TableHead>
+                            <TableRow>
+                              <TableCell sx={{ color: "#ffffff", fontWeight: "bold" }}>Date</TableCell>
+                              <TableCell sx={{ color: "#ffffff", fontWeight: "bold" }}>Merchant</TableCell>
+                              <TableCell sx={{ color: "#ffffff", fontWeight: "bold" }}>Original Category</TableCell>
+                              <TableCell sx={{ color: "#ffffff", fontWeight: "bold" }}>Mapped Category</TableCell>
+                              <TableCell sx={{ color: "#ffffff", fontWeight: "bold" }}>Amount</TableCell>
                             </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </TableContainer>
+                          </TableHead>
+                          <TableBody>
+                            {transactions.map((transaction, index) => (
+                              <TableRow key={index}>
+                                <TableCell sx={{ color: "#b3b3b3" }}>
+                                  {new Date(transaction.timestamp).toLocaleDateString()}
+                                </TableCell>
+                                <TableCell sx={{ color: "#b3b3b3" }}>
+                                  {transaction.merchant_details?.name || 'Unknown'}
+                                </TableCell>
+                                <TableCell sx={{ color: "#b3b3b3" }}>
+                                  {transaction.merchant_details?.category || 'Unknown'}
+                                </TableCell>
+                                <TableCell sx={{ color: "#b3b3b3" }}>
+                                  {mapToStandardCategories([transaction])[0].Category}
+                                </TableCell>
+                                <TableCell sx={{ color: "#b3b3b3" }}>
+                                  ${parseFloat(transaction.amount).toFixed(2)}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </TableContainer>
+
+                      {/* Next Step Button */}
+                      <Box sx={{ mt: 4, textAlign: 'center' }}>
+                        <Button
+                          variant="contained"
+                          onClick={handleMapAndNavigate}
+                          sx={{
+                            background: "linear-gradient(45deg, #00C49F 30%, #00A3FF 90%)",
+                            color: "white",
+                            px: 4,
+                            py: 2,
+                            fontSize: "1.1rem",
+                            borderRadius: "999px",
+                            boxShadow: "0 3px 5px 2px rgba(0, 196, 159, .3)",
+                            "&:hover": {
+                              background: "linear-gradient(45deg, #00A3FF 30%, #00C49F 90%)",
+                              transform: "translateY(-2px)",
+                              transition: "all 0.3s ease",
+                            },
+                          }}
+                        >
+                          View in Dashboard
+                        </Button>
+                      </Box>
+                    </Box>
                   ) : (
                     <Box sx={{ 
                       display: "flex", 
@@ -739,6 +1208,14 @@ const Profile = () => {
           </Grid>
         </Grid>
       </Box>
+
+      {/* Generation Progress Component */}
+      <GenerationProgress />
+      
+      {/* Show completion view when generation is done */}
+      {!isGenerating && showTransactionTable && generatedTransactions.length > 0 && (
+          <CompletionView transactions={generatedTransactions} />
+      )}
     </Box>
   );
 };

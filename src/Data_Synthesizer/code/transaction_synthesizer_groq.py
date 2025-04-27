@@ -4,14 +4,20 @@ import random
 import requests
 import json
 import time
+import re
 from typing import Dict, List
 from geopy.distance import geodesic
 from config import API_KEY_Groq
 from pydantic import BaseModel
-from fastapi import FastAPI, HTTPException
-import os
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+import concurrent.futures
+import math
+from sse_starlette.sse import EventSourceResponse
+import asyncio
+from fastapi.routing import APIRouter
+import os
 
 path = os.path.dirname(os.path.abspath(__file__))
 df_path = os.path.join(path, "..", "data", "dc_businesses_cleaned.csv")
@@ -115,8 +121,11 @@ class TransactionGenerator:
         }
         self.merchants = merchants_df
         self._preprocess_merchants()
-        self._build_merchant_cache()
-
+        
+        # Add merchant caching
+        self._merchant_cache = {}
+        self._category_merchant_cache = {}
+        
         self.spending_categories = {
             # Food & Grocery
             "groceries": 0.14,
@@ -170,7 +179,7 @@ class TransactionGenerator:
             "massage_parlor": 0.01
         }
 
-        # Update transaction scaling parameters for weekly data
+        # Update transaction scaling parameters for monthly data
         self.MIN_TRANSACTIONS_PER_DAY = 2
         self.MAX_TRANSACTIONS_PER_DAY = 8
         self.BASE_INCOME = 50000
@@ -236,38 +245,51 @@ class TransactionGenerator:
             print(f"Traceback: {traceback.format_exc()}")
             raise
 
-    def _build_merchant_cache(self):
-        """Build merchant lookup cache"""
-        try:
-            print("\nBuilding merchant cache...")
-            
-            # Group by both zipcode and category
-            self.merchant_cache = {}
-            for zip_code in self.merchants['Zipcode'].unique():
-                for category in self.merchants['mapped_category'].unique():
-                    merchants = self.merchants[
-                        (self.merchants['Zipcode'] == zip_code) & 
-                        (self.merchants['mapped_category'] == category)
-                    ].to_dict('records')
-                    
-                    if merchants:
-                        self.merchant_cache[(zip_code, category)] = merchants
-            
-            print(f"Cache built with {len(self.merchant_cache)} zip+category combinations")
-            
-        except Exception as e:
-            print(f"Error building merchant cache: {str(e)}")
-            raise
-
-    def _calculate_transaction_count(self, income: float, days: int = 7) -> int:
-        """Logarithmic scaling of transaction count with income for multiple days"""
-        income_ratio = np.log1p(max(income, 10000) / self.BASE_INCOME)
-        daily_min = self.MIN_TRANSACTIONS_PER_DAY
-        daily_max = self.MAX_TRANSACTIONS_PER_DAY
+    def _get_merchant(self, category: str, zipcode: str) -> Dict:
+        """Get merchant with caching"""
+        cache_key = f"{category}:{zipcode}"
         
-        daily_scaled = daily_min + (daily_max - daily_min) * income_ratio
-        total_transactions = int(daily_scaled * days)
-        return total_transactions
+        # Check category cache first
+        if category not in self._category_merchant_cache:
+            self._category_merchant_cache[category] = self.merchants[
+                self.merchants['mapped_category'] == category
+            ].to_dict('records')
+        
+        # Check specific merchant cache
+        if cache_key not in self._merchant_cache:
+            merchants = [m for m in self._category_merchant_cache[category] 
+                       if str(m['Zipcode']).startswith(str(zipcode)[:3])]
+            if not merchants:  # Fallback to any merchant in category
+                merchants = self._category_merchant_cache[category]
+            self._merchant_cache[cache_key] = merchants
+
+        merchants = self._merchant_cache[cache_key]
+        return random.choice(merchants) if merchants else self._create_fallback_merchant(category, zipcode)
+
+    def _calculate_transaction_count(self, income: float, days: int = 30) -> int:
+        """Calculate monthly transactions based on income with reasonable limits"""
+        # Base transaction counts per month
+        MIN_MONTHLY_TRANSACTIONS = 20  # Minimum 20 transactions per month
+        MAX_MONTHLY_TRANSACTIONS = 60  # Maximum 60 transactions per month
+        
+        # Calculate based on income brackets
+        if income < 30000:
+            base_count = MIN_MONTHLY_TRANSACTIONS
+        elif income < 50000:
+            base_count = 30
+        elif income < 75000:
+            base_count = 40
+        elif income < 100000:
+            base_count = 50
+        else:
+            base_count = MAX_MONTHLY_TRANSACTIONS
+        
+        # Add small random variation (±10%)
+        variation = random.uniform(-0.1, 0.1)
+        final_count = int(base_count * (1 + variation))
+        
+        # Ensure within bounds
+        return max(MIN_MONTHLY_TRANSACTIONS, min(final_count, MAX_MONTHLY_TRANSACTIONS))
 
     def _get_nearby_merchants(self, base_zip: str, max_distance: int = 2) -> List[Dict]:
         """Find merchants within 'max_distance' miles using geodesic distance."""
@@ -280,48 +302,6 @@ class TransactionGenerator:
             axis=1
         )
         return self.merchants[self.merchants['distance'] <= max_distance]
-
-    def _get_merchant(self, category: str, zipcode: str) -> dict:
-        """Find appropriate merchant with fallback"""
-        try:
-            clean_zip = zipcode[:5] if zipcode[:5] in DC_ZIP_COORDS else '20001'
-            
-            # Debug print
-            print(f"\nLooking for merchant in category: {category} for zipcode: {clean_zip}")
-            
-            # First try exact match from cache
-            cache_key = (clean_zip, category)
-            cached_merchants = self.merchant_cache.get(cache_key, [])
-            
-            if cached_merchants:
-                print(f"Found {len(cached_merchants)} merchants in cache for {category}")
-                return random.choice(cached_merchants)
-
-            # If no exact match, try nearby merchants
-            print("No cached merchants found, searching nearby...")
-            nearby_merchants = self._get_nearby_merchants(clean_zip)
-            
-            # Filter for matching category
-            matching_merchants = nearby_merchants[
-                nearby_merchants['mapped_category'] == category
-            ].to_dict('records')
-            
-            if matching_merchants:
-                print(f"Found {len(matching_merchants)} nearby merchants for {category}")
-                return random.choice(matching_merchants)
-
-            # Fallback only if no real merchants found
-            print(f"No merchants found for {category}, using fallback")
-            return {
-                "Name": f"DC {category.replace('_', ' ').title()}",
-                "Category": category,
-                "Zipcode": clean_zip,
-                "Latitude": DC_ZIP_COORDS[clean_zip][0],
-                "Longitude": DC_ZIP_COORDS[clean_zip][1]
-            }
-        except Exception as e:
-            print(f"Error in _get_merchant: {str(e)}")
-            raise
 
     def _assign_categories(self) -> list:
         """Random category assignment with income weighting"""
@@ -342,226 +322,148 @@ class TransactionGenerator:
         }
 
     def _batch_generate_transactions(self, customer: dict, merchants: list, num_tx: int) -> List[dict]:
-        """Generate multiple transactions in a single API call"""
         try:
-            print("\nPreparing to generate transactions...")
+            # Remove print statements that aren't necessary
+            current_date = time.strftime("%Y-%m-%d")
+            merchant_examples = "\n".join([
+                f'  - Name: "{m.get("Name", "")}", Category: "{m.get("Category", "")}"'
+                for m in merchants[:3]
+            ])
             
-            # Prepare a simpler list of merchants for the prompt
-            merchant_examples = []
-            for m in merchants[:10]:  # Limit to 10 merchants to keep prompt size reasonable
-                name = m.get('Name', '')
-                category = m.get('Category', '')
-                if name and category:
-                    merchant_examples.append(f"{name} ({category})")
+            prompt = f"""Generate exactly {num_tx} financial transactions as a JSON array.
 
-            # Simplified prompt
-            prompt = f"""Create {num_tx} transactions using these real DC merchants:
+Available Merchants:
+{merchant_examples}
 
-Available DC Merchants:
-{chr(10).join('- ' + m for m in merchant_examples)}
-
-Customer: {customer['age']} year old {customer['gender']}, income ${customer['income']}/year
-
-Generate a JSON array of transactions. Each transaction must use one of the merchants listed above.
-Example format:
+Requirements:
+1. Use ONLY the provided merchants
+2. Generate transactions for date: {current_date}
+3. Amount range: $10.00 to $200.00
+4. Use this EXACT JSON structure:
 [
-    {{
-        "amount": 45.99,
-        "timestamp": "2024-03-22T14:30:00Z",
-        "merchant_details": {{
-            "name": "{merchant_examples[0].split('(')[0].strip()}",
-            "category": "{merchants[0].get('Category', '')}",
-            "zipcode": "{customer['zipcode']}"
-        }},
-        "payment_type": "credit_card"
-    }}
+  {{
+    "amount": 45.99,
+    "timestamp": "{current_date}T10:30:00Z",
+    "merchant_details": {{
+      "name": "<exact merchant name from list>",
+      "category": "<exact merchant category>",
+      "zipcode": "{customer['zipcode']}"
+    }},
+    "payment_type": "credit_card"
+  }}
 ]"""
 
-            print("Making API request...")
             response = requests.post(
                 "https://api.groq.com/openai/v1/chat/completions",
                 headers=self.headers,
                 json={
-                    "model": "llama3-70b-8192",
+                    "model": "llama-3.3-70b-versatile",
                     "messages": [
                         {
                             "role": "system",
-                            "content": "You are a transaction generator. Generate only valid JSON arrays of transactions."
+                            "content": "You are a precise JSON generator. Output only valid JSON arrays matching the exact specified format. No additional text or explanations."
                         },
                         {
                             "role": "user",
                             "content": prompt
                         }
                     ],
-                    "temperature": 0.3,
-                    "max_tokens": 2000
+                    "temperature": 0.1,
+                    "max_tokens": 1000,
+                    "top_p": 0.9
                 },
-                timeout=60
+                timeout=30
             )
-
-            print(f"API Response Status: {response.status_code}")
             
             if response.status_code != 200:
-                print(f"API Error: {response.text}")
                 return []
 
-            # Parse response
             try:
-                response_data = response.json()
-                print("Successfully got JSON response from API")
+                response_json = response.json()
+                content = response_json["choices"][0]["message"]["content"].strip()
                 
-                # Extract the content from the nested response
-                content = response_data.get('choices', [{}])[0].get('message', {}).get('content', '')
-                if not content:
-                    print("No content in API response")
-                    return []
-
-                # Clean up the content - remove any text before the JSON array
-                content = content.strip()
-                start_idx = content.find('[')
-                end_idx = content.rfind(']') + 1
-                if start_idx == -1 or end_idx == 0:
-                    print("Could not find JSON array in content")
+                # Clean and parse JSON without debug output
+                content = content.replace('\n', ' ').replace('\r', '')
+                content = re.sub(r'```json|```', '', content)
+                content = re.sub(r'[^\[\]\{\}",:.\d\w\s-]', '', content)
+                
+                match = re.search(r'\[.*\]', content)
+                if not match:
                     return []
                 
-                json_content = content[start_idx:end_idx]
-                
-                # Parse the JSON array
-                transactions = json.loads(json_content)
+                transactions = json.loads(match.group(0))
                 if not isinstance(transactions, list):
-                    print(f"Expected list but got {type(transactions)}")
                     return []
+                
+                valid_transactions = []
+                for tx in transactions:
+                    if isinstance(tx, dict) and all(k in tx for k in ["amount", "timestamp", "merchant_details", "payment_type"]):
+                        if isinstance(tx["merchant_details"], dict) and all(k in tx["merchant_details"] for k in ["name", "category", "zipcode"]):
+                            try:
+                                tx["amount"] = float(tx["amount"])
+                                if 10 <= tx["amount"] <= 200:
+                                    valid_transactions.append(tx)
+                            except (ValueError, TypeError):
+                                continue
+                
+                return valid_transactions
 
-                print(f"Successfully parsed {len(transactions)} transactions")
-
-                # Create merchant lookup for validation
-                merchant_lookup = {m.get('Name', ''): m for m in merchants}
-
-                # Process transactions
-                processed_transactions = []
-                for idx, txn in enumerate(transactions):
-                    try:
-                        merchant_name = txn.get('merchant_details', {}).get('name', '').strip()
-                        merchant = merchant_lookup.get(merchant_name)
-                        
-                        if not merchant:
-                            print(f"Warning: Merchant not found: {merchant_name}")
-                            # Use the merchant details as provided in the response
-                            merchant = txn.get('merchant_details', {})
-                        
-                        processed_txn = {
-                            "customer_id": customer["customer_id"],
-                            "amount": round(float(txn.get("amount", 0)), 2),
-                            "timestamp": txn.get("timestamp", ""),
-                            "merchant_details": {
-                                "name": merchant_name,
-                                "category": merchant.get('category', txn.get('merchant_details', {}).get('category', '')),
-                                "zipcode": merchant.get('zipcode', txn.get('merchant_details', {}).get('zipcode', customer['zipcode']))
-                            },
-                            "payment_type": txn.get("payment_type", "credit_card")
-                        }
-
-                        if processed_txn["amount"] > 0 and processed_txn["timestamp"]:
-                            processed_transactions.append(processed_txn)
-                            print(f"Processed transaction {idx + 1}: {merchant_name} - ${processed_txn['amount']}")
-
-                    except Exception as e:
-                        print(f"Error processing transaction {idx + 1}: {str(e)}")
-                        continue
-
-                print(f"Successfully processed {len(processed_transactions)} transactions")
-                return processed_transactions
-
-            except json.JSONDecodeError as e:
-                print(f"JSON parsing error: {str(e)}")
-                print("Raw response:", response.text[:500])  # Print first 500 chars
+            except json.JSONDecodeError:
                 return []
-            except Exception as e:
-                print(f"Error processing API response: {str(e)}")
-                return []
-
-        except Exception as e:
-            print(f"Batch generation failed: {str(e)}")
+            
+        except Exception:
             return []
 
     def generate_transactions(self, user_data: dict) -> list:
-        """Main generation method"""
+        """Main generation method with smaller batches"""
         try:
             print("\n=== Starting Transaction Generation ===")
             print(f"User data: {user_data}")
 
-            # Validate input
-            required = ['age', 'gender', 'household_size', 'income', 'zipcode']
-            if any(field not in user_data for field in required):
-                raise ValueError("Missing required user data fields")
-
             # Create customer profile
             customer = {
                 'customer_id': f"WEB-{random.randint(100000, 999999)}",
-                **{k: str(user_data[k]) if k == 'zipcode' else user_data[k] for k in required}
+                **{k: str(user_data[k]) if k == 'zipcode' else user_data[k] for k in ['age', 'gender', 'household_size', 'income', 'zipcode']}
             }
-            print(f"\nCustomer profile created: {customer}")
 
-            # Calculate number of transactions
-            income = float(user_data['income'])
-            tx_count = max(5, min(20, int(np.log1p(income/50000) * 10)))
-            print(f"\nCalculated transaction count: {tx_count}")
+            # Calculate transactions needed
+            total_needed = self._calculate_transaction_count(float(user_data['income']), days=30)
+            print(f"\nNeed to generate {total_needed} transactions")
 
-            # Get categories
+            # Generate in very small batches
+            all_transactions = []
+            batch_size = 10 
             categories = self._assign_categories()
-            print(f"\nAssigned categories: {categories}")
-            if not categories:
-                raise ValueError("No categories assigned")
 
-            # Debug merchant cache
-            print("\nMerchant cache status:")
-            print(f"Total cached combinations: {len(self.merchant_cache)}")
-            sample_key = next(iter(self.merchant_cache)) if self.merchant_cache else None
-            if sample_key:
-                print(f"Sample cache key: {sample_key}")
-                print(f"Sample merchants for key: {len(self.merchant_cache[sample_key])}")
-
-            # Get merchants
-            merchants = []
-            print("\nFetching merchants for each category:")
-            for cat in categories:
+            while len(all_transactions) < total_needed:
                 try:
-                    merchant = self._get_merchant(cat, customer['zipcode'])
-                    if merchant:
-                        print(f"✓ Found merchant for {cat}: {merchant.get('Name', 'Unknown')}")
-                        merchants.append(merchant)
-                    else:
-                        print(f"✗ No merchant found for {cat}")
+                    current_batch_size = min(batch_size, total_needed - len(all_transactions))
+                    merchants = [self._get_merchant(random.choice(categories), customer['zipcode']) 
+                               for _ in range(current_batch_size)]
+                    
+                    batch_transactions = self._batch_generate_transactions(customer, merchants, current_batch_size)
+                    if batch_transactions:
+                        all_transactions.extend(batch_transactions)
+                        print(f"Progress: {len(all_transactions)}/{total_needed} transactions")
+                    
+                    if not batch_transactions:
+                        print("Batch generated no transactions, retrying...")
+                    
+                    time.sleep(1)  # Small delay between batches
+                    
                 except Exception as e:
-                    print(f"✗ Error getting merchant for {cat}: {str(e)}")
+                    print(f"Batch failed: {str(e)}")
+                    continue
 
-            merchants = [m for m in merchants if m]
-            print(f"\nTotal valid merchants found: {len(merchants)}")
-            
-            if not merchants:
-                raise ValueError("No valid merchants available")
+                if len(all_transactions) >= total_needed:
+                    break
 
-            # Show sample merchants
-            print("\nSample merchants to be used:")
-            for idx, m in enumerate(merchants[:5]):
-                print(f"{idx + 1}. {m.get('Name', 'Unknown')} - {m.get('Category', 'Unknown')}")
-
-            # Generate transactions
-            print(f"\nGenerating {tx_count} transactions...")
-            transactions = self._batch_generate_transactions(customer, merchants, tx_count)
-            
-            if not transactions:
-                print("❌ No transactions were generated by batch generator")
-                raise ValueError("No transactions generated")
-
-            print(f"\n✅ Successfully generated {len(transactions)} transactions")
-            return transactions
+            print(f"\nFinished generating {len(all_transactions)} transactions")
+            return all_transactions
 
         except Exception as e:
-            print(f"\n❌ Transaction generation failed: {str(e)}")
-            import traceback
-            print(f"Traceback: {traceback.format_exc()}")
-            raise
+            print(f"Transaction generation failed: {str(e)}")
+            return []
 
 
 # First load the raw data
@@ -597,10 +499,11 @@ app = FastAPI(lifespan=lifespan)
 # Allow frontend to talk to the API
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Change "*" to your frontend domain in production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Content-Type", "X-SSE"]
 )
 
 class UserInput(BaseModel):
@@ -615,33 +518,139 @@ class UserInput(BaseModel):
 generator = TransactionGenerator(api_key=API_KEY_Groq, merchants_df=merchants_df_raw)
 
 
-@app.post("/generate")
-async def generate_transactions(user_in: UserInput):
+@app.route("/generate", methods=["GET", "POST"])
+async def generate_transactions(request: Request):
     try:
-        print("\n=== New Transaction Request ===")
-        print(f"Input data: {user_in.model_dump()}")
-        
-        data = user_in.model_dump()
-        tx = generator.generate_transactions(data)
-        
-        if not tx:
-            error_msg = "No transactions were generated"
-            print(f"❌ {error_msg}")
-            raise HTTPException(status_code=400, detail=error_msg)
-            
-        print(f"✅ Successfully generated {len(tx)} transactions")
-        return {"transactions": tx}
-        
-    except ValueError as ve:
-        error_msg = f"Validation error: {str(ve)}"
-        print(f"❌ {error_msg}")
-        raise HTTPException(status_code=400, detail=error_msg)
+        # Get parameters either from query params (GET) or request body (POST)
+        if request.method == "GET":
+            params = dict(request.query_params)
+            user_data = {
+                "age": int(params.get("age", 0)),
+                "gender": params.get("gender", ""),
+                "household_size": int(params.get("household_size", 0)),
+                "income": float(params.get("income", 0)),
+                "zipcode": params.get("zipcode", "")
+            }
+        else:  # POST
+            user_data = await request.json()
+
+        # Validate the data
+        if not all([user_data.get("age"), user_data.get("gender"), 
+                   user_data.get("household_size"), user_data.get("income"), 
+                   user_data.get("zipcode")]):
+            raise HTTPException(status_code=400, detail="Missing required fields")
+
+        async def event_generator():
+            try:
+                # Initial status
+                yield {
+                    "event": "status",
+                    "data": json.dumps({
+                        "message": "Starting transaction generation...",
+                        "progress": 0,
+                        "status": "initializing"
+                    })
+                }
+
+                total_needed = generator._calculate_transaction_count(float(user_data['income']))
+                yield {
+                    "event": "status",
+                    "data": json.dumps({
+                        "message": f"Planning to generate {total_needed} transactions",
+                        "total": total_needed,
+                        "progress": 0,
+                        "status": "planning"
+                    })
+                }
+
+                all_transactions = []
+                batch_size = 5
+                categories = generator._assign_categories()
+
+                batch_number = 0
+                while len(all_transactions) < total_needed:
+                    if await request.is_disconnected():
+                        print("Client disconnected")
+                        break
+
+                    try:
+                        current_batch_size = min(batch_size, total_needed - len(all_transactions))
+                        merchants = [generator._get_merchant(random.choice(categories), user_data['zipcode']) 
+                                   for _ in range(current_batch_size)]
+
+                        yield {
+                            "event": "status",
+                            "data": json.dumps({
+                                "message": f"Processing batch {batch_number + 1}",
+                                "merchants": [m.get('Name') for m in merchants],
+                                "progress": len(all_transactions),
+                                "total": total_needed,
+                                "status": "processing"
+                            })
+                        }
+
+                        batch_transactions = generator._batch_generate_transactions(user_data, merchants, current_batch_size)
+                        
+                        if batch_transactions:
+                            all_transactions.extend(batch_transactions)
+                            yield {
+                                "event": "batch_complete",
+                                "data": json.dumps({
+                                    "message": f"Completed batch {batch_number + 1}",
+                                    "transactions": batch_transactions,
+                                    "progress": len(all_transactions),
+                                    "total": total_needed,
+                                    "status": "batch_complete"
+                                })
+                            }
+                        else:
+                            yield {
+                                "event": "status",
+                                "data": json.dumps({
+                                    "message": f"Retrying batch {batch_number + 1}",
+                                    "progress": len(all_transactions),
+                                    "total": total_needed,
+                                    "status": "retrying"
+                                })
+                            }
+
+                        batch_number += 1
+                        await asyncio.sleep(1)
+
+                    except Exception as e:
+                        print(f"Error in batch {batch_number}: {str(e)}")
+                        yield {
+                            "event": "error",
+                            "data": json.dumps({
+                                "message": f"Error in batch {batch_number + 1}: {str(e)}",
+                                "status": "error"
+                            })
+                        }
+
+                # Final status
+                yield {
+                    "event": "complete",
+                    "data": json.dumps({
+                        "message": f"Successfully generated {len(all_transactions)} transactions",
+                        "transactions": all_transactions,
+                        "status": "complete"
+                    })
+                }
+
+            except Exception as e:
+                print(f"Generation failed: {str(e)}")
+                yield {
+                    "event": "error",
+                    "data": json.dumps({
+                        "message": f"Transaction generation failed: {str(e)}",
+                        "status": "error"
+                    })
+                }
+
+        return EventSourceResponse(event_generator())
+    
     except Exception as e:
-        error_msg = f"Server error: {str(e)}"
-        print(f"❌ {error_msg}")
-        import traceback
-        print(f"Traceback: {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=error_msg)
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 if __name__ == "__main__":
