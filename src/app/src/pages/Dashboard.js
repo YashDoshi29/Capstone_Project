@@ -34,9 +34,11 @@ const Dashboard = () => {
     );
   };
 
+  const [file] = useState(null);
   const [transactions, setTransactions] = useState([]);
-  const [error] = useState("");
-  const [chartType, setChartType] = useState("radar");
+  const [error, setError] = useState("");
+  const [setLoading] = useState(false);
+  const [chartType, setChartType] = useState("donut");
 
   useEffect(() => {
     if (!sessionStorage.getItem("dashboardLaunched")) {
@@ -44,12 +46,69 @@ const Dashboard = () => {
       localStorage.removeItem("categorizedSpending");
       sessionStorage.setItem("dashboardLaunched", "true");
     }
-  
+
     const savedTransactions = localStorage.getItem("transactions");
     if (savedTransactions) {
       setTransactions(JSON.parse(savedTransactions));
     }
   }, []);
+
+
+
+  const parsePDF = async (pdfFile) => {
+    setLoading(true);
+    setError("");
+    const formData = new FormData();
+    formData.append("file", pdfFile);
+    try {
+      const response = await fetch("http://127.0.0.1:5050/upload", {
+        method: "POST",
+        body: formData,
+      });
+      if (!response.ok) throw new Error("Error uploading PDF.");
+      const pdfText = await response.text();
+      const parsed = await new Response(new Blob([pdfText])).text();
+      const lines = parsed.trim().split("\n");
+      const headers = lines[0].split(",");
+      const transactions = lines.slice(1).map(line => {
+        const values = line.split(",");
+        const obj = {};
+        headers.forEach((h, i) => {
+          obj[h] = values[i];
+        });
+        return obj;
+      });
+      const formatted = formatTransactions(transactions);
+      saveTransactions(formatted);
+    } catch (error) {
+      console.error("Upload failed:", error);
+      setError("Please upload the file again: " + error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const formatTransactions = (parsedTransactions) =>
+    parsedTransactions.map((transaction) => ({
+      Category: transaction.Category || "Unknown",
+      Amount: parseFloat(transaction.Amount) || 0,
+      "Transaction Date": new Date(transaction["Transaction Date"]).toLocaleDateString(),
+      "Posting Date": new Date(transaction["Posting Date"]).toLocaleDateString(),
+    }));
+
+  const saveTransactions = (formattedTransactions) => {
+    setTransactions(formattedTransactions);
+    localStorage.setItem("transactions", JSON.stringify(formattedTransactions));
+
+    const categoryTotals = formattedTransactions.reduce((acc, transaction) => {
+      if (!acc[transaction.Category]) acc[transaction.Category] = 0;
+      acc[transaction.Category] += transaction.Amount;
+      return acc;
+    }, {});
+
+    localStorage.setItem("categorizedSpending", JSON.stringify(categoryTotals));
+  };
+
 
   const categoryData = transactions.reduce((acc, transaction) => {
     const category = transaction.Category;
@@ -59,18 +118,14 @@ const Dashboard = () => {
     return acc;
   }, {});
 
-  const pieData = Object.keys(categoryData)
-    .filter((key) => categoryData[key] > 0)
-    .map((key) => ({
-      name: key,
-      value: categoryData[key],
-    }));
+  const pieData = Object.keys(categoryData).map((key) => ({
+    name: key,
+    value: categoryData[key],
+  }));
 
   const renderChart = () => {
     const renderActiveShape = (props) => {
-      const {
-        cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill, payload,
-      } = props;
+      const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill, payload } = props;
       return (
         <g>
           <text x={cx} y={cy} dy={8} textAnchor="middle" fill="#fff" fontSize={14}>
@@ -92,7 +147,7 @@ const Dashboard = () => {
     switch (chartType) {
       case "donut":
         return (
-          <ResponsiveContainer width="100%" height={450}>
+        <ResponsiveContainer key={chartType} width="100%" height={450}>
             <PieChart>
               <defs>
                 {COLORS.map((color, index) => (
@@ -155,13 +210,10 @@ const Dashboard = () => {
       case "radar":
       default:
         return (
-          <ResponsiveContainer width="100%" height={500}>
+          <ResponsiveContainer key={chartType} width="100%" height={500}>
             <RadarChart data={pieData}>
               <PolarGrid stroke="#444" />
-              <PolarAngleAxis
-                dataKey="name"
-                stroke="#00ffe0"
-              />
+              <PolarAngleAxis dataKey="name" stroke="#00ffe0" />
               <PolarRadiusAxis stroke="#555" />
               <Radar
                 name="💸"
@@ -188,15 +240,12 @@ const Dashboard = () => {
     }
   };
 
+
   return (
-    <Box sx={{ 
-      width: "100%", 
-      background: "linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%)",
-      color: "#ffffff", 
-      minHeight: "100vh",
-      py: 2,
-      px: { xs: 2, md: 4 }
-    }}>
+    <Box sx={{ width: "100%", background: "radial-gradient(circle, #0f0f0f, #1c1c1c, #2f2f2f)", color: "white", minHeight: "100vh" }}>
+      
+  
+      {/* Main Content */}
       <Box sx={{ pt: "100px", textAlign: "center" }}>
         <animated.div style={heroAnimation}>
           <Typography
@@ -205,219 +254,244 @@ const Dashboard = () => {
               fontWeight: 700,
               mb: 2,
               fontFamily: "'Segoe UI', 'Roboto', 'Helvetica Neue', sans-serif",
-              color: "#ffffff",
+              color: "#FFB07C",
               letterSpacing: "1.8px",
               textAlign: "center",
-              textShadow: "0px 0px 10px rgba(255, 255, 255, 0.3)",
+              textShadow: "0 1px 2px rgba(0,0,0,0.5), 0 2px 6px rgba(0,0,0,0.4), 0 4px 10px rgba(0,0,0,0.3)",
             }}
           >
             💼 Budget Breakdown
           </Typography>
         </animated.div>
-        
-        <Grid container spacing={3} justifyContent="center" alignItems="stretch">
-          {/* Left Info Block */}
-          <Grid item xs={12} md={3}>
-            <Fade direction="left" triggerOnce>
-              <Box
-                sx={{
-                  background: "rgba(26, 26, 26, 0.8)",
-                  backdropFilter: "blur(10px)",
-                  padding: "28px",
-                  borderRadius: "20px",
-                  height: "100%",
-                  color: "#ffffff",
-                  fontSize: "1.05rem",
-                  boxShadow: "0 8px 32px 0 rgba(0, 0, 0, 0.3)",
-                  lineHeight: 1.75,
-                  border: "1px solid rgba(255, 255, 255, 0.1)",
-                  display: "flex",
-                  flexDirection: "column",
-                  justifyContent: "center",
-                }}
-              >
-                <Typography
-                  variant="h6"
-                  sx={{
-                    color: "#ffffff",
-                    mb: 2,
-                    fontWeight: "bold",
-                    fontSize: "1.25rem",
-                    textShadow: "0px 0px 10px rgba(255, 255, 255, 0.3)",
-                  }}
-                >
-                  💡 Ready to Dive In?
-                </Typography>
+  
+        {/* 3-Column Grid: Left | Center | Right */}
+        <Fade triggerOnce>
+          <Grid container spacing={3} justifyContent="center" alignItems="stretch">
+            {/* Left Info Block */}
+            <Grid item xs={12} md={3}>
+              <Fade direction="left" triggerOnce>
+              <br></br>
 
-                <Typography
-                  sx={{
-                    fontSize: "1.05rem",
-                    color: "#b3b3b3",
-                    fontWeight: 500,
-                    textShadow: "0px 0px 5px rgba(255, 255, 255, 0.2)"
-                  }}
-                >
-                  Drop your credit card statement. <br />
-                  Watch your spending story unfold.
-                </Typography>
-              </Box>
-            </Fade>
-          </Grid>
-
-          {/* Center Card (Chart + Upload) */}
-          <Grid item xs={12} md={6}>
-            <Card sx={{ 
-              background: "rgba(26, 26, 26, 0.8)",
-              backdropFilter: "blur(10px)",
-              borderRadius: "20px",
-              border: "1px solid rgba(255, 255, 255, 0.1)",
-              boxShadow: "0 8px 32px 0 rgba(0, 0, 0, 0.3)",
-              color: "#ffffff"
-            }}>
-              <CardContent>
+                <Typography sx={{
+                  fontFamily: '"Pacifico", cursive',
+                  fontSize: "2.5rem",
+                  color: "#fff",
+                  background: "linear-gradient(135deg, #ffb6c1, #87cefa, #dda0dd, #fff176)",
+                  WebkitBackgroundClip: "text",
+                  WebkitTextFillColor: "transparent",
+                  textShadow: "2px 2px 4px rgba(0,0,0,0.2), 4px 4px 8px rgba(0,0,0,0.15)",
+                  animation: "bounce 3s infinite",
+                  transform: "rotate(-5deg)",
+                  textAlign: "center",
+                  mb: 2,
+                }}>
                   
-                {error && <Typography sx={{ color: "#ff4444", mt: 2 }}>{error}</Typography>}
+                  Track Every Penny!
+                </Typography>
+                <br /><br /><br /><br />
                 
-                <Box sx={{ display: "flex", justifyContent: "center", gap: 2, mt: 3 }}>
-                  <Button
-                    onClick={() => setChartType("donut")}
-                    sx={{
-                      background: chartType === "donut" ? "linear-gradient(45deg, rgba(255, 255, 255, 0.9) 30%, rgba(255, 255, 255, 0.7) 90%)" : "transparent",
-                      color: chartType === "donut" ? "#1a1a1a" : "#ffffff",
-                      border: "2px solid rgba(255, 255, 255, 0.3)",
-                      padding: "10px 24px",
-                      borderRadius: "10px",
-                      fontWeight: "bold",
-                      fontSize: "1rem",
-                      textTransform: "uppercase",
-                      transition: "all 0.3s ease-in-out",
-                      boxShadow: chartType === "donut" ? "0 4px 12px rgba(255, 255, 255, 0.2)" : "none",
-                      "&:hover": {
-                        background: "linear-gradient(45deg, rgba(255, 255, 255, 0.7) 30%, rgba(255, 255, 255, 0.9) 90%)",
-                        boxShadow: "0 6px 16px rgba(255, 255, 255, 0.3)",
-                        color: "#1a1a1a",
-                      },
-                    }}
-                  >
-                    🍩 Donut Chart
-                  </Button>
-                  
-                  <Button
-                    onClick={() => setChartType("radar")}
-                    sx={{
-                      background: chartType === "radar" ? "linear-gradient(45deg, rgba(255, 255, 255, 0.9) 30%, rgba(255, 255, 255, 0.7) 90%)" : "transparent",
-                      color: chartType === "radar" ? "#1a1a1a" : "#ffffff",
-                      border: "2px solid rgba(255, 255, 255, 0.3)",
-                      padding: "10px 24px",
-                      borderRadius: "10px",
-                      fontWeight: "bold",
-                      fontSize: "1rem",
-                      textTransform: "uppercase",
-                      transition: "all 0.3s ease-in-out",
-                      boxShadow: chartType === "radar" ? "0 4px 12px rgba(255, 255, 255, 0.2)" : "none",
-                      "&:hover": {
-                        background: "linear-gradient(45deg, rgba(255, 255, 255, 0.7) 30%, rgba(255, 255, 255, 0.9) 90%)",
-                        boxShadow: "0 6px 16px rgba(255, 255, 255, 0.3)",
-                        color: "#1a1a1a",
-                      },
-                    }}
-                  >
-                    📡 Radar Chart
-                  </Button>
-                </Box>
-                {renderChart()}
-              </CardContent>
-            </Card>
-          </Grid>
-
-          {/* Right Info Block */}
-          <Grid item xs={12} md={3}>
-            <Fade direction="right" triggerOnce>
-              <Box
-                sx={{
-                  background: "rgba(26, 26, 26, 0.8)",
-                  backdropFilter: "blur(10px)",
+                <Box sx={{
+                  mt: 8,
+                  background: "linear-gradient(to bottom right, #232323, #2d2d2d)",
                   padding: "28px",
-                  borderRadius: "20px",
+                  borderRadius: "14px",
                   height: "100%",
-                  color: "#ffffff",
+                  color: "#ddd",
                   fontSize: "1.05rem",
-                  boxShadow: "0 8px 32px 0 rgba(0, 0, 0, 0.3)",
+                  boxShadow: "0 6px 20px rgba(0,0,0,0.4)",
                   lineHeight: 1.75,
-                  border: "1px solid rgba(255, 255, 255, 0.1)",
+                  border: "1px solid #333",
                   display: "flex",
                   flexDirection: "column",
                   justifyContent: "center",
-                }}
-              >
-                <Typography
-                  variant="h6"
-                  sx={{
-                    color: "#ffffff",
-                    mb: 2,
-                    fontWeight: "bold",
-                    fontSize: "1.25rem",
-                    textShadow: "0px 0px 10px rgba(255, 255, 255, 0.3)",
-                  }}
-                >
-                  Your Next Step 🚀
-                </Typography>
+                }}>
+                  
 
-                <Typography
-                  sx={{
-                    fontSize: "1.05rem",
-                    color: "#b3b3b3",
-                    fontWeight: 500,
-                    textShadow: "0px 0px 5px rgba(255, 255, 255, 0.2)"
-                  }}
-                >
-                  Take a peek at your spending patterns.
-                  <br />
-                  Hop to Optimization for smart ways to save!
+                  <Typography
+                    variant="h6"
+                    sx={{
+                      color: "#FFD700",
+                      mb: 2,
+                      fontWeight: "bold",
+                      fontSize: "1.25rem",
+                      textShadow: "0 1px 4px rgba(0,0,0,0.6)",
+                    }}
+                  >
+                    💡 Ready to Dive In?
+                  </Typography>
+                  <Typography
+                    sx={{
+                      fontSize: "1.05rem",
+                      color: "#eee",
+                      background: "linear-gradient(90deg, #ffecd2, #fcb69f)",
+                      WebkitBackgroundClip: "text",
+                      WebkitTextFillColor: "transparent",
+                      fontWeight: 500,
+                      textShadow: "0 1px 2px rgba(0,0,0,0.3)",
+                    }}
+                  >
+                    Drop your credit card statement.<br />
+                    Watch your spending story unfold.
+                  </Typography>
+                </Box>
+              </Fade>
+            </Grid>
+  
+            {/* Center Card (File Upload + Charts) */}
+            <Grid item xs={12} md={6}>
+              <Card sx={{ backgroundColor: "#2f2f2f", color: "white" }}>
+                <CardContent>
+  
+                  
+  
+                  {/* Error if any */}
+                  {error && <Typography sx={{ color: "red", mt: 2 }}>{error}</Typography>}
+  
+                  {/* Chart Switch Buttons */}
+                  <Box sx={{ display: "flex", justifyContent: "center", gap: 3, mt: 4, mb: 4 }}>
+                    {/* Donut Button */}
+                    <Button onClick={() => setChartType("donut")} sx={{
+                      background: chartType === "donut" ? "linear-gradient(135deg, #d7b899, #b08c5f)" : "transparent",
+                      color: chartType === "donut" ? "white" : "#b08c5f",
+                      border: "2px solid #b08c5f",
+                      padding: "10px 24px",
+                      borderRadius: "10px",
+                      fontWeight: "bold",
+                      fontSize: "1rem",
+                      textTransform: "uppercase",
+                      transition: "all 0.3s ease-in-out",
+                      boxShadow: chartType === "donut" ? "0px 6px 18px rgba(183,141,94,0.4)" : "none",
+                    }}>
+                      🍩 Donut Chart
+                    </Button>
+  
+                    {/* Radar Button */}
+                    <Button onClick={() => setChartType("radar")} sx={{
+                      background: chartType === "radar" ? "linear-gradient(135deg, #00c6ff, #0072ff)" : "transparent",
+                      color: chartType === "radar" ? "white" : "#00c6ff",
+                      border: "2px solid #00c6ff",
+                      padding: "10px 24px",
+                      borderRadius: "10px",
+                      fontWeight: "bold",
+                      fontSize: "1rem",
+                      textTransform: "uppercase",
+                      transition: "all 0.3s ease-in-out",
+                      boxShadow: chartType === "radar" ? "0px 6px 18px rgba(0,198,255,0.4)" : "none",
+                    }}>
+                      📡 Radar Chart
+                    </Button>
+                  </Box>
+  
+                  {/* Chart Rendering */}
+                  {renderChart()}
+  
+                </CardContent>
+              </Card>
+            </Grid>
+  
+            {/* Right Info Block */}
+            <Grid item xs={12} md={3}>
+              <Fade direction="right" triggerOnce>
+              <br /><br /><br /><br /><br /><br /><br /><br /><br />
+                <Box sx={{
+                  mt: 8,
+                  background: "linear-gradient(to bottom right, #232323, #2d2d2d)",
+                  padding: "28px",
+                  borderRadius: "14px",
+                  height: "100%",
+                  color: "#ddd",
+                  fontSize: "1.05rem",
+                  boxShadow: "0 6px 20px rgba(0,0,0,0.4)",
+                  lineHeight: 1.75,
+                  border: "1px solid #333",
+                  display: "flex",
+                  flexDirection: "column",
+                  justifyContent: "center",
+                }}>
+                  <Typography
+                    variant="h6"
+                    sx={{
+                      color: "#90ee90",
+                      mb: 2,
+                      fontWeight: "bold",
+                      fontSize: "1.25rem",
+                      textShadow: "0 1px 4px rgba(0,0,0,0.6)",
+                      fontFamily: "'Poppins', sans-serif",
+                    }}
+                  >
+                    Your Next Step 🚀
+                  </Typography>
+                  <Typography
+                    sx={{
+                      fontSize: "1.05rem",
+                      color: "#eee",
+                      background: "linear-gradient(90deg, #c2e9fb, #a1c4fd)",
+                      WebkitBackgroundClip: "text",
+                      WebkitTextFillColor: "transparent",
+                      fontWeight: 500,
+                      fontFamily: "'Poppins', sans-serif",
+                      textShadow: "0 1px 2px rgba(0,0,0,0.3)",
+                    }}
+                  >
+                    Take a peek at your spending patterns.<br />
+                    Hop to Optimization for smart ways to save!
+                  </Typography>
+                </Box>
+                <br /><br /><br /><br />
+                {/* Motivational Footer Text */}
+                <Typography sx={{
+                  mt: 6,
+                  fontFamily: '"Baloo 2", cursive',
+                  fontSize: "2.5rem",
+                  background: "linear-gradient(135deg, #fbc2eb, #a6c1ee, #fda085, #f6d365, #c3cfe2)",
+                  WebkitBackgroundClip: "text",
+                  WebkitTextFillColor: "transparent",
+                  textShadow: "0 0 6px rgba(255,255,255,0.25), 0 0 12px rgba(255,255,255,0.15)",
+                  transform: "rotate(5deg)",
+                  textAlign: "center",
+                }}>
+                  Grow Smarter Habits
                 </Typography>
-              </Box>
-            </Fade>
+              </Fade>
+            </Grid>
+  
           </Grid>
-        </Grid>
+        </Fade>
       </Box>
-
+  
+      {/* Footer */}
       <Box sx={{ textAlign: "center", mt: 4 }}>
-        <Button
-          component={Link}
-          to="/optimization"
-          variant="contained"
-          sx={{
-            padding: "12px 28px",
-            borderRadius: "999px",
-            fontWeight: "bold",
-            fontSize: "1rem",
-            textTransform: "uppercase",
-            background: "linear-gradient(45deg, rgba(255, 255, 255, 0.9) 30%, rgba(255, 255, 255, 0.7) 90%)",
-            color: "#1a1a1a",
-            boxShadow: "0 4px 12px rgba(255, 255, 255, 0.2)",
-            transition: "all 0.3s ease-in-out",
-            "&:hover": {
-              background: "linear-gradient(45deg, rgba(255, 255, 255, 0.7) 30%, rgba(255, 255, 255, 0.9) 90%)",
-              boxShadow: "0 6px 20px rgba(255, 255, 255, 0.3)",
-              transform: "translateY(-2px)",
-            },
-          }}
-        >
+        <Button component={Link} to="/optimization" variant="contained" sx={{
+          padding: "12px 28px",
+          borderRadius: "999px",
+          fontWeight: "bold",
+          fontSize: "1rem",
+          textTransform: "uppercase",
+          background: "linear-gradient(135deg, #6a5acd, #4f9df7)",
+          boxShadow: "0 4px 12px rgba(79,157,247,0.3)",
+          transition: "all 0.3s ease-in-out",
+          "&:hover": {
+            background: "linear-gradient(135deg, #7a6aff, #3a8dff)",
+            boxShadow: "0 6px 20px rgba(79,157,247,0.5)",
+            transform: "translateY(-2px)",
+          },
+        }}>
           🎛️ Fine-Tune Spending
         </Button>
       </Box>
-
-      <Box component="footer" sx={{ 
-        width: "100%", 
-        padding: "1rem", 
-        color: "#ffffff", 
-        textAlign: "center",
-        mt: 4
-      }}>
-        <Typography variant="body2">© {new Date().getFullYear()} Credge AI. All rights reserved.</Typography>
+  
+      <Box component="footer" sx={{ width: "100%", padding: "1rem", color: "white", textAlign: "center" }}>
+        <Typography variant="body2">
+          © {new Date().getFullYear()} Financial Assistant. All rights reserved.
+        </Typography>
       </Box>
+  
     </Box>
   );
+  
+  
+  
+
 };
 
 export default Dashboard;

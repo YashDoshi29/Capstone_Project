@@ -18,10 +18,28 @@ const StyledButton = styled(Button)(({ theme }) => ({
   padding: "8px 16px",
   borderRadius: "8px",
   fontFamily: "'Inter', sans-serif",
+  position: "relative",
+  "&::after": {
+    content: '""',
+    position: "absolute",
+    width: "100%",
+    transform: "scaleX(0)",
+    height: "2px",
+    bottom: 0,
+    left: 0,
+    backgroundColor: "white", 
+    transformOrigin: "bottom right",
+    transition: "transform 0.25s ease-out",
+  },
+  "&:hover::after": {
+    transform: "scaleX(1)",
+    transformOrigin: "bottom left",
+  },
   "&:hover": {
     backgroundColor: "rgba(255, 255, 255, 0.1)",
   },
 }));
+
 
 const StyledLink = styled(Link)(({ theme }) => ({
   textDecoration: "none",
