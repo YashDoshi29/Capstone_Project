@@ -266,16 +266,6 @@ const Profile = () => {
     });
   };
 
-  // Navigation items
-  const navItems = [
-    { name: 'ClassifyBot 💡', path: '/dashboard' },
-    { name: 'Optimization', path: '/optimization' },
-    { name: 'Investment', path: '/investment' },
-    { name: 'Profile', path: '/profile' },
-    { name: 'News', path: '/FinancialNews' },
-    { name: 'Logout', path: '/' }
-  ];
-
   return (
     <Box
       sx={{
