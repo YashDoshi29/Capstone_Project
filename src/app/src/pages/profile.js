@@ -222,7 +222,7 @@ const Profile = () => {
       setLoading(true);
       try {
         // Adjust the URL to your actual data-generation endpoint
-        const response = await fetch("http://localhost:8000/generate", {
+        const response = await fetch("http://0.0.0.0:8000/generate", {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -237,14 +237,37 @@ const Profile = () => {
         if (!response.ok) throw new Error("Network response was not ok");
 
         const data = await response.json();
-        const newTransactions = data.transactions || data;
+        console.log("Raw server response:", data); // Log the raw response
 
-        if (Array.isArray(newTransactions)) {
-          setTransactions(newTransactions);
-          setError('');
-        } else {
-          throw new Error("Invalid data format received from server");
-        }
+        // Ensure we're getting the transactions array
+        const newTransactions = Array.isArray(data) ? data : 
+                              (data.transactions || []);
+
+        console.log("Transactions before formatting:", newTransactions); // Log before formatting
+
+        // Format the transactions properly
+        const formattedTransactions = newTransactions.map(transaction => {
+          // Log each transaction before formatting
+          console.log("Processing transaction:", transaction);
+          
+          // Extract category and merchant name from merchant_details
+          const category = transaction.merchant_details?.category || 'Unknown';
+          const merchantName = transaction.merchant_details?.name || 'Unknown Merchant';
+          
+          const formatted = {
+            Category: category.charAt(0).toUpperCase() + category.slice(1), // Capitalize first letter
+            Amount: parseFloat(transaction.amount || 0),
+            "Transaction Date": new Date(transaction.timestamp).toLocaleDateString(),
+            Description: `${merchantName} (${transaction.payment_type})`
+          };
+
+          console.log("Formatted transaction:", formatted);
+          return formatted;
+        });
+
+        console.log("Final formatted transactions:", formattedTransactions);
+        setTransactions(formattedTransactions);
+        setError('');
       } catch (err) {
         setError(err.message);
         console.error("Error generating data:", err);
@@ -254,9 +277,8 @@ const Profile = () => {
     }
   };
 
-  // Reset the generated transaction list and clear inputs
+  // Reset form and clear transactions
   const handleReset = () => {
-    setTransactions([]);
     setUserData({
       age: '',
       gender: '',
@@ -264,6 +286,8 @@ const Profile = () => {
       annualIncome: '',
       zipcode: '',
     });
+    setTransactions([]);
+    setError('');
   };
 
   return (
@@ -560,50 +584,156 @@ const Profile = () => {
                   )}
                 </Box>
               ) : (
-                <Box sx={{ textAlign: 'center', py: 4 }}>
-                  <Button
-                    variant="contained"
-                    onClick={handleSubmit}
-                    disabled={loading}
-                    startIcon={loading ? <CircularProgress size={20} /> : <CloudUploadIcon />}
-                    sx={{
-                      background: 'linear-gradient(45deg, rgba(255, 255, 255, 0.9) 30%, rgba(255, 255, 255, 0.7) 90%)',
-                      color: '#1a1a1a',
-                      boxShadow: '0 3px 5px 2px rgba(255, 255, 255, .2)',
-                      '&:hover': {
-                        background: 'linear-gradient(45deg, rgba(255, 255, 255, 0.7) 30%, rgba(255, 255, 255, 0.9) 90%)',
-                      },
-                      '&.Mui-disabled': {
-                        background: 'rgba(255, 255, 255, 0.12)',
-                      },
-                    }}
-                  >
-                    {loading ? 'Generating...' : 'Generate Data'}
-                  </Button>
-                </Box>
-              )}
+                <Box>
+                  <Box sx={{ display: "flex", justifyContent: "center", mb: 3 }}>
+                    <Button
+                      variant="contained"
+                      onClick={handleSubmit}
+                      disabled={loading}
+                      startIcon={loading ? <CircularProgress size={20} /> : <CloudUploadIcon />}
+                      sx={{
+                        background: "linear-gradient(45deg, rgba(255, 255, 255, 0.9) 30%, rgba(255, 255, 255, 0.7) 90%)",
+                        color: "#1a1a1a",
+                        boxShadow: "0 3px 5px 2px rgba(255, 255, 255, .2)",
+                        "&:hover": {
+                          background: "linear-gradient(45deg, rgba(255, 255, 255, 0.7) 30%, rgba(255, 255, 255, 0.9) 90%)",
+                        },
+                        "&.Mui-disabled": {
+                          background: "rgba(255, 255, 255, 0.12)",
+                        },
+                      }}
+                    >
+                      {loading ? 'Generating...' : 'Generate Data'}
+                    </Button>
+                  </Box>
 
-              {transactions.length > 0 && (
-                <TableContainer component={Paper} sx={{ mt: 3, background: 'rgba(26, 26, 26, 0.8)' }}>
-                  <Table>
-                    <TableHead>
-                      <TableRow>
-                        <TableCell sx={{ color: '#ffffff' }}>Category</TableCell>
-                        <TableCell align="right" sx={{ color: '#ffffff' }}>Amount</TableCell>
-                        <TableCell align="right" sx={{ color: '#ffffff' }}>Date</TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {transactions.map((transaction, index) => (
-                        <TableRow key={index}>
-                          <TableCell sx={{ color: '#b3b3b3' }}>{transaction.Category}</TableCell>
-                          <TableCell align="right" sx={{ color: '#b3b3b3' }}>${transaction.Amount.toFixed(2)}</TableCell>
-                          <TableCell align="right" sx={{ color: '#b3b3b3' }}>{transaction['Transaction Date']}</TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </TableContainer>
+                  {transactions.length > 0 ? (
+                    <TableContainer component={Paper} sx={{ 
+                      background: "rgba(26, 26, 26, 0.8)",
+                      backdropFilter: "blur(10px)",
+                      borderRadius: "20px",
+                      border: "1px solid rgba(255, 255, 255, 0.1)",
+                      boxShadow: "0 8px 32px 0 rgba(0, 0, 0, 0.3)",
+                      maxHeight: "500px",
+                      overflow: "auto",
+                      "&::-webkit-scrollbar": {
+                        width: "8px",
+                      },
+                      "&::-webkit-scrollbar-track": {
+                        background: "rgba(255, 255, 255, 0.1)",
+                        borderRadius: "4px",
+                      },
+                      "&::-webkit-scrollbar-thumb": {
+                        background: "rgba(255, 255, 255, 0.2)",
+                        borderRadius: "4px",
+                        "&:hover": {
+                          background: "rgba(255, 255, 255, 0.3)",
+                        },
+                      },
+                    }}>
+                      <Table stickyHeader>
+                        <TableHead>
+                          <TableRow>
+                            <TableCell sx={{ 
+                              color: "#ffffff", 
+                              borderColor: "rgba(255, 255, 255, 0.1)",
+                              fontWeight: "bold",
+                              fontSize: "0.9rem",
+                              background: "rgba(26, 26, 26, 0.9)",
+                            }}>
+                              Date
+                            </TableCell>
+                            <TableCell sx={{ 
+                              color: "#ffffff", 
+                              borderColor: "rgba(255, 255, 255, 0.1)",
+                              fontWeight: "bold",
+                              fontSize: "0.9rem",
+                              background: "rgba(26, 26, 26, 0.9)",
+                            }}>
+                              Category
+                            </TableCell>
+                            <TableCell sx={{ 
+                              color: "#ffffff", 
+                              borderColor: "rgba(255, 255, 255, 0.1)",
+                              fontWeight: "bold",
+                              fontSize: "0.9rem",
+                              background: "rgba(26, 26, 26, 0.9)",
+                            }}>
+                              Description
+                            </TableCell>
+                            <TableCell align="right" sx={{ 
+                              color: "#ffffff", 
+                              borderColor: "rgba(255, 255, 255, 0.1)",
+                              fontWeight: "bold",
+                              fontSize: "0.9rem",
+                              background: "rgba(26, 26, 26, 0.9)",
+                            }}>
+                              Amount
+                            </TableCell>
+                          </TableRow>
+                        </TableHead>
+                        <TableBody>
+                          {transactions.map((transaction, index) => (
+                            <TableRow 
+                              key={index}
+                              sx={{ 
+                                '&:nth-of-type(odd)': {
+                                  backgroundColor: 'rgba(255, 255, 255, 0.03)',
+                                },
+                                '&:hover': {
+                                  backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                                },
+                              }}
+                            >
+                              <TableCell sx={{ 
+                                color: "#b3b3b3", 
+                                borderColor: "rgba(255, 255, 255, 0.1)",
+                                fontSize: "0.85rem",
+                              }}>
+                                {transaction?.["Transaction Date"] ? new Date(transaction["Transaction Date"]).toLocaleDateString() : 'N/A'}
+                              </TableCell>
+                              <TableCell sx={{ 
+                                color: "#b3b3b3", 
+                                borderColor: "rgba(255, 255, 255, 0.1)",
+                                fontSize: "0.85rem",
+                              }}>
+                                {transaction?.Category || 'Unknown'}
+                              </TableCell>
+                              <TableCell sx={{ 
+                                color: "#b3b3b3", 
+                                borderColor: "rgba(255, 255, 255, 0.1)",
+                                fontSize: "0.85rem",
+                              }}>
+                                {transaction?.Description || 'No description'}
+                              </TableCell>
+                              <TableCell align="right" sx={{ 
+                                color: (transaction?.Amount || 0) < 0 ? "#ff4444" : "#4CAF50",
+                                borderColor: "rgba(255, 255, 255, 0.1)",
+                                fontSize: "0.85rem",
+                                fontWeight: "bold",
+                              }}>
+                                ${Math.abs(transaction?.Amount || 0).toFixed(2)}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </TableContainer>
+                  ) : (
+                    <Box sx={{ 
+                      display: "flex", 
+                      flexDirection: "column", 
+                      alignItems: "center", 
+                      justifyContent: "center",
+                      minHeight: "200px",
+                      color: "#b3b3b3"
+                    }}>
+                      <CloudUploadIcon sx={{ fontSize: 48, mb: 2 }} />
+                      <Typography variant="h6">No data generated yet</Typography>
+                      <Typography variant="body2">Fill in your profile details and click "Generate Data"</Typography>
+                    </Box>
+                  )}
+                </Box>
               )}
             </Card>
           </Grid>

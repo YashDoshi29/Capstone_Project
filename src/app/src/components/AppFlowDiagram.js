@@ -242,7 +242,7 @@ const AppFlowDiagram = () => {
                 transition={{ duration: 0.1 }}
                 style={{
                   top: '50%',
-                  transform: 'translateY(-40%)',
+                  transform: 'translateY(-80%)',
                   zIndex: 3
                 }}
               />
@@ -265,7 +265,7 @@ const AppFlowDiagram = () => {
             style={{
               left: section.position.x,
               top: section.position.y,
-              zIndex: 2
+              zIndex: 10
             }}
           >
             <NodeContent>
