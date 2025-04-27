@@ -1662,7 +1662,7 @@ const FinancialChatBot = () => {
   return (
     <Box sx={{
       width: "100%",
-      background: "radial-gradient(circle, #888888, #444444, #1c1c1c)",
+      background: "radial-gradient(circle, #0f0f0f, #1c1c1c, #2f2f2f)",
       color: "white",
       minHeight: "100vh"
     }}>
