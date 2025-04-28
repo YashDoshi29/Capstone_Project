@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Box, AppBar, Toolbar, Typography, Button, Grid, Collapse, Card,CardContent, TextField, Divider } from "@mui/material";
+import { Box, Typography, Button, Grid, Collapse, Card,CardContent, TextField, Divider } from "@mui/material";
 import { Link } from "react-router-dom";
 import { useSpring, animated } from "@react-spring/web";
 import { Fade } from "react-awesome-reveal";
@@ -43,9 +43,29 @@ const BudgetOptimization = () => {
     const lines = responseText.split("\n");
     const dollarRegex = /\$?(\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?)/g;
   
+    for (let line of lines) {
+      // NEW ➔ Capture 'Total estimated monthly savings'
+      if (/total\s+estimated\s+monthly\s+savings/i.test(line)) {
+        const matches = [...line.matchAll(dollarRegex)].map(m =>
+          parseFloat(m[1].replace(/,/g, ""))
+        );
+        if (matches.length === 2) {
+          const average = (matches[0] + matches[1]) / 2;
+          return {
+            average,
+            rangeText: `$${matches[0].toFixed(0)} - $${matches[1].toFixed(0)}`
+          };
+        } else if (matches.length === 1) {
+          return {
+            average: matches[0],
+            rangeText: `$${matches[0].toFixed(0)}`
+          };
+        }
+      }
+    }
+  
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
-  
       const isOverallLine = /overall\s+(estimated\s+)?monthly\s+savings/i.test(line) ||
                             /overall\s+estimated/i.test(line);
   
@@ -73,7 +93,6 @@ const BudgetOptimization = () => {
           const matches = [...nextLine.matchAll(dollarRegex)].map(m =>
             parseFloat(m[1].replace(/,/g, ""))
           );
-  
           if (matches.length === 2) {
             const average = (matches[0] + matches[1]) / 2;
             return {
@@ -95,7 +114,6 @@ const BudgetOptimization = () => {
         const matches = [...line.matchAll(dollarRegex)].map(m =>
           parseFloat(m[1].replace(/,/g, ""))
         );
-  
         if (matches.length === 2) {
           const average = (matches[0] + matches[1]) / 2;
           return {
@@ -113,6 +131,7 @@ const BudgetOptimization = () => {
   
     return { average: 0, rangeText: "$0" };
   };
+  
   
   useEffect(() => {
     setChatbotResponse("");
@@ -254,7 +273,7 @@ const BudgetOptimization = () => {
   - Give **Overall Monthly Savings** at the end everytime.`,
         },
       ],
-      temperature: 0.9,
+      temperature: 0.1,
     };
   
     axios.post(
@@ -262,7 +281,7 @@ const BudgetOptimization = () => {
       requestData,
       {
         headers: {
-          Authorization: `Bearer YOUR_API_KEY`,
+          Authorization: `Bearer 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`,
           "Content-Type": "application/json",
         },
       }
@@ -394,74 +413,17 @@ const BudgetOptimization = () => {
     });
   };
 
-  const navItems = [
-    { name: 'ClassifyBot 💡', path: '/dashboard' },
-    { name: 'Optimization', path: '/optimization' },
-    { name: 'Investment', path: '/investment' },
-    { name: 'News', path: '/FinancialNews' },
-    { name: 'Logout', path: '/'}
-
-  ];
+ 
 
   return (
     <Box
       sx={{
         width: "100%",
-        background: "radial-gradient(circle, #888888, #444444, #1c1c1c)",
+        background: "radial-gradient(circle, #0f0f0f, #1c1c1c, #2f2f2f)",
         color: "white",
         minHeight: "100vh",
       }}
     >
-      <AppBar position="fixed" sx={{ backgroundColor: 'transparent', boxShadow: 'none', padding: '0.5rem 1rem' }}>
-      <Toolbar sx={{ justifyContent: 'space-between' }}>
-        <Typography variant="h6" sx={{ fontWeight: 'bold', color: 'white' }}>
-          Financial Assistant
-        </Typography>
-        <Box>
-          {navItems.map((item) => (
-            <Button
-              key={item.name}
-              component={Link}
-              to={item.path}
-              variant="text"
-              sx={{
-                color: 'white',
-                position: 'relative',
-                '&:hover': {
-                  color: '#ADD8E6', 
-                  '&::after': {
-                    content: '""',
-                    position: 'absolute',
-                    width: '100%',
-                    height: '2px',
-                    bottom: 0,
-                    left: 0,
-                    backgroundColor: '#ADD8E6', 
-                    visibility: 'visible',
-                    transform: 'scaleX(1)',
-                    transition: 'all 0.3s ease-in-out',
-                  },
-                },
-                '&::after': {
-                  content: '""',
-                  position: 'absolute',
-                  width: '100%',
-                  height: '2px',
-                  bottom: 0,
-                  left: 0,
-                  backgroundColor: '#ADD8E6',
-                  visibility: 'hidden',
-                  transform: 'scaleX(0)',
-                  transition: 'all 0.3s ease-in-out',
-                },
-              }}
-            >
-              {item.name}
-            </Button>
-          ))}
-        </Box>
-      </Toolbar>
-    </AppBar>
 
       <Box sx={{ pt: "100px", textAlign: "center" }}>
         <animated.div style={heroAnimation}>

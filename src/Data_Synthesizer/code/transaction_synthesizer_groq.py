@@ -4,17 +4,29 @@ import random
 import requests
 import json
 import time
+import re
 from typing import Dict, List
 from geopy.distance import geodesic
 from config import API_KEY_Groq
 from pydantic import BaseModel
-from fastapi import FastAPI, HTTPException
-import os
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
+import concurrent.futures
+import math
+from sse_starlette.sse import EventSourceResponse
+import asyncio
+from fastapi.routing import APIRouter
+import os
 
 path = os.path.dirname(os.path.abspath(__file__))
 df_path = os.path.join(path, "..", "data", "dc_businesses_cleaned.csv")
 
+if not API_KEY_Groq or len(API_KEY_Groq.strip()) < 20:
+    raise ValueError("""
+    Invalid or missing Groq API key. 
+    Make sure your config.py file contains a valid API_KEY_Groq value.
+    """)
 
 # Updated Merchant category mapping
 CATEGORY_MAPPING = {
@@ -109,8 +121,11 @@ class TransactionGenerator:
         }
         self.merchants = merchants_df
         self._preprocess_merchants()
-        self._build_merchant_cache()
-
+        
+        # Add merchant caching
+        self._merchant_cache = {}
+        self._category_merchant_cache = {}
+        
         self.spending_categories = {
             # Food & Grocery
             "groceries": 0.14,
@@ -164,54 +179,117 @@ class TransactionGenerator:
             "massage_parlor": 0.01
         }
 
-        # Transaction scaling parameters
-        self.MIN_TRANSACTIONS = 5
-        self.MAX_TRANSACTIONS = 20
-        self.BASE_INCOME = 50000  # Median income for scaling
+        # Update transaction scaling parameters for monthly data
+        self.MIN_TRANSACTIONS_PER_DAY = 2
+        self.MAX_TRANSACTIONS_PER_DAY = 8
+        self.BASE_INCOME = 50000
 
     def _preprocess_merchants(self):
         """Clean and prepare merchant data"""
-        column_map = {
-            'ENTITY_NAME': 'Name',
-            'LICENSECATEGORY': 'Category',
-            'ZIP': 'Zipcode',
-            'LATITUDE': 'Latitude',
-            'LONGITUDE': 'Longitude'
-        }
-        self.merchants = self.merchants.rename(columns=column_map)
+        try:
+            print("\n=== Preprocessing Merchants ===")
+            print(f"Initial merchant count: {len(self.merchants)}")
+            print("Initial columns:", self.merchants.columns.tolist())
 
-        # Set default coordinates if missing
-        if 'Latitude' not in self.merchants.columns:
-            self.merchants['Latitude'] = 38.9072
-        if 'Longitude' not in self.merchants.columns:
-            self.merchants['Longitude'] = -77.0369
+            # Rename columns
+            column_map = {
+                'ENTITY_NAME': 'Name',
+                'LICENSECATEGORY': 'Category',
+                'ZIP': 'Zipcode',
+                'LATITUDE': 'Latitude',
+                'LONGITUDE': 'Longitude'
+            }
+            self.merchants = self.merchants.rename(columns=column_map)
+            print("\nColumns after renaming:", self.merchants.columns.tolist())
 
-        # Map categories and clean data
-        self.merchants['mapped_category'] = (
-            self.merchants['Category']
-            .map(CATEGORY_MAPPING)
-            .fillna('other')
-        )
-        self.merchants['Zipcode'] = (
-            self.merchants['Zipcode']
-            .astype(str)
-            .str.extract(r'(\d{5})')[0]
-            .fillna('20001')
-        )
+            # Set default coordinates
+            if 'Latitude' not in self.merchants.columns:
+                self.merchants['Latitude'] = 38.9072
+                print("Added default Latitude")
+            if 'Longitude' not in self.merchants.columns:
+                self.merchants['Longitude'] = -77.0369
+                print("Added default Longitude")
 
-    def _build_merchant_cache(self):
-        """Build merchant lookup cache"""
-        self.merchant_cache = (
-            self.merchants.groupby(['Zipcode', 'mapped_category'])
-            .apply(lambda x: x.to_dict('records'))
-            .to_dict()
-        )
+            # Map categories
+            print("\nMapping categories...")
+            print("Original categories sample:", self.merchants['Category'].unique()[:5])
+            
+            self.merchants['mapped_category'] = (
+                self.merchants['Category']
+                .map(CATEGORY_MAPPING)
+                .fillna('other')
+            )
+            
+            print("Mapped categories sample:", self.merchants['mapped_category'].unique()[:5])
+            print(f"Total unique mapped categories: {self.merchants['mapped_category'].nunique()}")
 
-    def _calculate_transaction_count(self, income: float) -> int:
-        """Logarithmic scaling of transaction count with income"""
-        income_ratio = np.log1p(max(income, 10000) / self.BASE_INCOME)
-        scaled = self.MIN_TRANSACTIONS + (self.MAX_TRANSACTIONS - self.MIN_TRANSACTIONS) * income_ratio
-        return min(self.MAX_TRANSACTIONS, int(scaled))
+            # Clean zipcode
+            print("\nCleaning zipcodes...")
+            self.merchants['Zipcode'] = (
+                self.merchants['Zipcode']
+                .astype(str)
+                .str.extract(r'(\d{5})')[0]
+                .fillna('20001')
+            )
+            
+            print("Sample zipcodes:", self.merchants['Zipcode'].unique()[:5])
+            print(f"\nFinal merchant count: {len(self.merchants)}")
+            
+            # Show sample of processed data
+            print("\nSample of processed merchants:")
+            print(self.merchants[['Name', 'Category', 'mapped_category', 'Zipcode']].head())
+
+        except Exception as e:
+            print(f"Error in preprocessing merchants: {str(e)}")
+            import traceback
+            print(f"Traceback: {traceback.format_exc()}")
+            raise
+
+    def _get_merchant(self, category: str, zipcode: str) -> Dict:
+        """Get merchant with caching"""
+        cache_key = f"{category}:{zipcode}"
+        
+        # Check category cache first
+        if category not in self._category_merchant_cache:
+            self._category_merchant_cache[category] = self.merchants[
+                self.merchants['mapped_category'] == category
+            ].to_dict('records')
+        
+        # Check specific merchant cache
+        if cache_key not in self._merchant_cache:
+            merchants = [m for m in self._category_merchant_cache[category] 
+                       if str(m['Zipcode']).startswith(str(zipcode)[:3])]
+            if not merchants:  # Fallback to any merchant in category
+                merchants = self._category_merchant_cache[category]
+            self._merchant_cache[cache_key] = merchants
+
+        merchants = self._merchant_cache[cache_key]
+        return random.choice(merchants) if merchants else self._create_fallback_merchant(category, zipcode)
+
+    def _calculate_transaction_count(self, income: float, days: int = 30) -> int:
+        """Calculate monthly transactions based on income with reasonable limits"""
+        # Base transaction counts per month
+        MIN_MONTHLY_TRANSACTIONS = 20  # Minimum 20 transactions per month
+        MAX_MONTHLY_TRANSACTIONS = 60  # Maximum 60 transactions per month
+        
+        # Calculate based on income brackets
+        if income < 30000:
+            base_count = MIN_MONTHLY_TRANSACTIONS
+        elif income < 50000:
+            base_count = 30
+        elif income < 75000:
+            base_count = 40
+        elif income < 100000:
+            base_count = 50
+        else:
+            base_count = MAX_MONTHLY_TRANSACTIONS
+        
+        # Add small random variation (±10%)
+        variation = random.uniform(-0.1, 0.1)
+        final_count = int(base_count * (1 + variation))
+        
+        # Ensure within bounds
+        return max(MIN_MONTHLY_TRANSACTIONS, min(final_count, MAX_MONTHLY_TRANSACTIONS))
 
     def _get_nearby_merchants(self, base_zip: str, max_distance: int = 2) -> List[Dict]:
         """Find merchants within 'max_distance' miles using geodesic distance."""
@@ -224,29 +302,6 @@ class TransactionGenerator:
             axis=1
         )
         return self.merchants[self.merchants['distance'] <= max_distance]
-
-    def _get_merchant(self, category: str, zipcode: str) -> dict:
-        """Find appropriate merchant with fallback"""
-        clean_zip = zipcode[:5] if zipcode[:5] in DC_ZIP_COORDS else '20001'
-        merchants = self.merchant_cache.get((clean_zip, category), [])
-
-        if not merchants:
-            nearby_merchants = self._get_nearby_merchants(clean_zip)
-            merchants = [
-                m for m in nearby_merchants
-                if m.get('mapped_category') == category
-            ]
-
-        if not merchants:
-            # Fallback merchant
-            return {
-                "Name": f"DC {category.replace('_', ' ').title()}",
-                "Category": category,
-                "Zipcode": clean_zip,
-                "Latitude": DC_ZIP_COORDS[clean_zip][0],
-                "Longitude": DC_ZIP_COORDS[clean_zip][1]
-            }
-        return random.choice(merchants)
 
     def _assign_categories(self) -> list:
         """Random category assignment with income weighting"""
@@ -266,169 +321,189 @@ class TransactionGenerator:
             for cat in categories
         }
 
-    def generate_transactions(self, user_data: dict) -> list:
-        """Main generation method for React interface"""
-        max_retries = 3
-        retry_delay = 5
-
-        # Validate input first (outside retry loop)
-        required = ['age', 'gender', 'household_size', 'income', 'zipcode']
-        if any(field not in user_data for field in required):
-            raise ValueError("Missing required user data fields")
-
-        # Create customer profile
-        customer = {
-            'customer_id': f"WEB-{random.randint(100000, 999999)}",
-            **{k: user_data[k] for k in required},
-            'zipcode': str(user_data['zipcode'])[:5]
-        }
-
-        for attempt in range(max_retries):
-            try:
-                # Determine transaction count
-                tx_count = self._calculate_transaction_count(float(user_data['income']))
-
-                # Assign categories and spending pattern
-                categories = self._assign_categories()
-                if not categories:
-                    raise ValueError("No spending categories assigned")
-
-                spending_pattern = self._generate_spending_pattern(categories, customer['income'])
-                subcats, weights = zip(*spending_pattern.items())
-                probs = np.array(weights) / sum(weights)
-
-                transactions = []
-                for _ in range(tx_count):
-                    try:
-                        # Select category and merchant
-                        category = np.random.choice(subcats, p=probs)
-                        merchant = self._get_merchant(category, customer['zipcode'])
-
-                        if not merchant.get('mapped_category'):
-                            merchant['mapped_category'] = category
-
-                        # Generate transaction via API
-                        txn = self._generate_transaction(customer, merchant)
-                        transactions.append(txn)
-
-                        # Rate limiting
-                        time.sleep(1.0)  # More conservative delay for Groq API
-
-                    except Exception as e:
-                        print(f"Transaction generation failed: {str(e)}")
-                        continue
-
-                return transactions
-
-            except requests.exceptions.HTTPError as e:
-                if e.response.status_code == 429:
-                    sleep_time = retry_delay * (attempt + 1)
-                    print(f"Rate limited, retrying in {sleep_time}s...")
-                    time.sleep(sleep_time)
-                    continue
-                raise
-
-            except Exception as e:
-                print(f"Transaction batch failed: {str(e)}")
-                if attempt == max_retries - 1:
-                    raise Exception(f"Max retries exceeded: {str(e)}")
-                time.sleep(retry_delay)
-                continue
-
-        return []
-
-    def _generate_transaction(self, customer: dict, merchant: dict) -> dict:
-        """Call Groq API to generate single transaction with enhanced error handling"""
+    def _batch_generate_transactions(self, customer: dict, merchants: list, num_tx: int) -> List[dict]:
         try:
-            # Ensure required merchant fields exist
-            merchant.setdefault('mapped_category', merchant.get('Category', 'other'))
-            merchant.setdefault('Name', 'Local Merchant')
-            merchant.setdefault('Zipcode', customer['zipcode'])
+            # Remove print statements that aren't necessary
+            current_date = time.strftime("%Y-%m-%d")
+            merchant_examples = "\n".join([
+                f'  - Name: "{m.get("Name", "")}", Category: "{m.get("Category", "")}"'
+                for m in merchants[:3]
+            ])
+            
+            prompt = f"""Generate exactly {num_tx} financial transactions as a JSON array.
 
-            prompt = f"""Generate realistic transaction details:
-            - Customer: {customer['age']}yo {customer['gender']}, 
-              {customer['household_size']} household members
-            - Income: ${customer['income']:,}/year
-            - Merchant: {merchant['Name']} ({merchant.get('Category', 'retail')})
-            - Location: {merchant['Zipcode']}
-            - Category: {merchant['mapped_category']}
+Available Merchants:
+{merchant_examples}
 
-            Output must be valid JSON with these exact fields:
-            {{
-                "amount": float,
-                "timestamp": "YYYY-MM-DDTHH:MM:SSZ",
-                "merchant_details": {{
-                    "name": "string",
-                    "category": "string",
-                    "zipcode": "string"
-                }},
-                "payment_type": "string"
-            }}"""
+Requirements:
+1. Use ONLY the provided merchants
+2. Generate transactions for date: {current_date}
+3. Amount range: $10.00 to $200.00
+4. Use this EXACT JSON structure:
+[
+  {{
+    "amount": 45.99,
+    "timestamp": "{current_date}T10:30:00Z",
+    "merchant_details": {{
+      "name": "<exact merchant name from list>",
+      "category": "<exact merchant category>",
+      "zipcode": "{customer['zipcode']}"
+    }},
+    "payment_type": "credit_card"
+  }}
+]"""
 
             response = requests.post(
                 "https://api.groq.com/openai/v1/chat/completions",
                 headers=self.headers,
                 json={
-                    "model": "llama3-70b-8192",
+                    "model": "llama-3.3-70b-versatile",
                     "messages": [
                         {
                             "role": "system",
-                            "content": "You are a financial data generator. Output must be valid JSON with exactly the fields specified."
+                            "content": "You are a precise JSON generator. Output only valid JSON arrays matching the exact specified format. No additional text or explanations."
                         },
                         {
                             "role": "user",
                             "content": prompt
                         }
                     ],
-                    "temperature": 0.3,
-                    "max_tokens": 500,
-                    "response_format": {"type": "json_object"}
+                    "temperature": 0.1,
+                    "max_tokens": 1000,
+                    "top_p": 0.9
                 },
                 timeout=30
             )
-            response.raise_for_status()
+            
+            if response.status_code != 200:
+                return []
 
-            # More robust response parsing
             try:
-                content = response.json()['choices'][0]['message']['content']
-                if '```json' in content:
-                    content = content.split('```json')[1].split('```')[0]
-                txn = json.loads(content.strip())
+                response_json = response.json()
+                content = response_json["choices"][0]["message"]["content"].strip()
+                
+                # Clean and parse JSON without debug output
+                content = content.replace('\n', ' ').replace('\r', '')
+                content = re.sub(r'```json|```', '', content)
+                content = re.sub(r'[^\[\]\{\}",:.\d\w\s-]', '', content)
+                
+                match = re.search(r'\[.*\]', content)
+                if not match:
+                    return []
+                
+                transactions = json.loads(match.group(0))
+                if not isinstance(transactions, list):
+                    return []
+                
+                valid_transactions = []
+                for tx in transactions:
+                    if isinstance(tx, dict) and all(k in tx for k in ["amount", "timestamp", "merchant_details", "payment_type"]):
+                        if isinstance(tx["merchant_details"], dict) and all(k in tx["merchant_details"] for k in ["name", "category", "zipcode"]):
+                            try:
+                                tx["amount"] = float(tx["amount"])
+                                if 10 <= tx["amount"] <= 200:
+                                    valid_transactions.append(tx)
+                            except (ValueError, TypeError):
+                                continue
+                
+                return valid_transactions
 
-                # Validate response structure
-                required_fields = ['amount', 'timestamp', 'merchant_details', 'payment_type']
-                if not all(field in txn for field in required_fields):
-                    raise ValueError("Missing required fields in API response")
+            except json.JSONDecodeError:
+                return []
+            
+        except Exception:
+            return []
 
-                return {
-                    "customer_id": customer['customer_id'],
-                    "amount": round(float(txn['amount']), 2),
-                    "timestamp": txn['timestamp'],
-                    "merchant_details": {
-                        "name": str(txn['merchant_details']['name']),
-                        "category": str(txn['merchant_details']['category']),
-                        "zipcode": str(txn['merchant_details']['zipcode'])
-                    },
-                    "payment_type": str(txn['payment_type'])
-                }
+    def generate_transactions(self, user_data: dict) -> list:
+        """Main generation method with smaller batches"""
+        try:
+            print("\n=== Starting Transaction Generation ===")
+            print(f"User data: {user_data}")
 
-            except (json.JSONDecodeError, KeyError, ValueError) as e:
-                raise ValueError(f"Invalid API response format: {str(e)}")
+            # Create customer profile
+            customer = {
+                'customer_id': f"WEB-{random.randint(100000, 999999)}",
+                **{k: str(user_data[k]) if k == 'zipcode' else user_data[k] for k in ['age', 'gender', 'household_size', 'income', 'zipcode']}
+            }
+
+            # Calculate transactions needed
+            total_needed = self._calculate_transaction_count(float(user_data['income']), days=30)
+            print(f"\nNeed to generate {total_needed} transactions")
+
+            # Generate in very small batches
+            all_transactions = []
+            batch_size = 10 
+            categories = self._assign_categories()
+
+            while len(all_transactions) < total_needed:
+                try:
+                    current_batch_size = min(batch_size, total_needed - len(all_transactions))
+                    merchants = [self._get_merchant(random.choice(categories), customer['zipcode']) 
+                               for _ in range(current_batch_size)]
+                    
+                    batch_transactions = self._batch_generate_transactions(customer, merchants, current_batch_size)
+                    if batch_transactions:
+                        all_transactions.extend(batch_transactions)
+                        print(f"Progress: {len(all_transactions)}/{total_needed} transactions")
+                    
+                    if not batch_transactions:
+                        print("Batch generated no transactions, retrying...")
+                    
+                    time.sleep(1)  # Small delay between batches
+                    
+                except Exception as e:
+                    print(f"Batch failed: {str(e)}")
+                    continue
+
+                if len(all_transactions) >= total_needed:
+                    break
+
+            print(f"\nFinished generating {len(all_transactions)} transactions")
+            return all_transactions
 
         except Exception as e:
-            raise ValueError(f"Transaction generation failed: {str(e)}")
+            print(f"Transaction generation failed: {str(e)}")
+            return []
 
 
-# FastAPI Setup
-app = FastAPI()
+# First load the raw data
+print("\n=== Loading Merchant Data ===")
+print(f"CSV Path: {df_path}")
+print(f"CSV exists: {os.path.exists(df_path)}")
+if os.path.exists(df_path):
+    print(f"CSV size: {os.path.getsize(df_path)} bytes")
+    print("First few rows:")
+    merchants_df_raw = pd.read_csv(df_path)
+    print(merchants_df_raw.head())
+else:
+    raise FileNotFoundError(f"Merchant data file not found: {df_path}")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Startup and shutdown events"""
+    # Startup
+    print("\n=== Raw Merchant Data Information ===")
+    print(f"Total merchants loaded: {len(merchants_df_raw)}")
+    print("\nSample merchants (raw data):")
+    print(merchants_df_raw[['Name', 'Category', 'Zipcode']].head())
+    print("\nUnique categories:", merchants_df_raw['Category'].nunique())
+    
+    yield
+    
+    # Shutdown
+    print("\nShutting down application...")
+
+# Update FastAPI initialization
+app = FastAPI(lifespan=lifespan)
 
 # Allow frontend to talk to the API
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Change "*" to your frontend domain in production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Content-Type", "X-SSE"]
 )
 
 class UserInput(BaseModel):
@@ -439,18 +514,143 @@ class UserInput(BaseModel):
     zipcode: str
 
 
-# Initialize generator once at startup
-merchants_df = pd.read_csv(df_path)
-generator = TransactionGenerator(api_key=API_KEY_Groq, merchants_df=merchants_df)
+# Initialize generator with processed data
+generator = TransactionGenerator(api_key=API_KEY_Groq, merchants_df=merchants_df_raw)
 
 
-@app.post("/generate")
-async def generate_transactions(user_input: UserInput):
+@app.route("/generate", methods=["GET", "POST"])
+async def generate_transactions(request: Request):
     try:
-        transactions = generator.generate_transactions(user_input.dict())
-        return {"transactions": transactions}
+        # Get parameters either from query params (GET) or request body (POST)
+        if request.method == "GET":
+            params = dict(request.query_params)
+            user_data = {
+                "age": int(params.get("age", 0)),
+                "gender": params.get("gender", ""),
+                "household_size": int(params.get("household_size", 0)),
+                "income": float(params.get("income", 0)),
+                "zipcode": params.get("zipcode", "")
+            }
+        else:  # POST
+            user_data = await request.json()
+
+        # Validate the data
+        if not all([user_data.get("age"), user_data.get("gender"), 
+                   user_data.get("household_size"), user_data.get("income"), 
+                   user_data.get("zipcode")]):
+            raise HTTPException(status_code=400, detail="Missing required fields")
+
+        async def event_generator():
+            try:
+                # Initial status
+                yield {
+                    "event": "status",
+                    "data": json.dumps({
+                        "message": "Starting transaction generation...",
+                        "progress": 0,
+                        "status": "initializing"
+                    })
+                }
+
+                total_needed = generator._calculate_transaction_count(float(user_data['income']))
+                yield {
+                    "event": "status",
+                    "data": json.dumps({
+                        "message": f"Planning to generate {total_needed} transactions",
+                        "total": total_needed,
+                        "progress": 0,
+                        "status": "planning"
+                    })
+                }
+
+                all_transactions = []
+                batch_size = 5
+                categories = generator._assign_categories()
+
+                batch_number = 0
+                while len(all_transactions) < total_needed:
+                    if await request.is_disconnected():
+                        print("Client disconnected")
+                        break
+
+                    try:
+                        current_batch_size = min(batch_size, total_needed - len(all_transactions))
+                        merchants = [generator._get_merchant(random.choice(categories), user_data['zipcode']) 
+                                   for _ in range(current_batch_size)]
+
+                        yield {
+                            "event": "status",
+                            "data": json.dumps({
+                                "message": f"Processing batch {batch_number + 1}",
+                                "merchants": [m.get('Name') for m in merchants],
+                                "progress": len(all_transactions),
+                                "total": total_needed,
+                                "status": "processing"
+                            })
+                        }
+
+                        batch_transactions = generator._batch_generate_transactions(user_data, merchants, current_batch_size)
+                        
+                        if batch_transactions:
+                            all_transactions.extend(batch_transactions)
+                            yield {
+                                "event": "batch_complete",
+                                "data": json.dumps({
+                                    "message": f"Completed batch {batch_number + 1}",
+                                    "transactions": batch_transactions,
+                                    "progress": len(all_transactions),
+                                    "total": total_needed,
+                                    "status": "batch_complete"
+                                })
+                            }
+                        else:
+                            yield {
+                                "event": "status",
+                                "data": json.dumps({
+                                    "message": f"Retrying batch {batch_number + 1}",
+                                    "progress": len(all_transactions),
+                                    "total": total_needed,
+                                    "status": "retrying"
+                                })
+                            }
+
+                        batch_number += 1
+                        await asyncio.sleep(1)
+
+                    except Exception as e:
+                        print(f"Error in batch {batch_number}: {str(e)}")
+                        yield {
+                            "event": "error",
+                            "data": json.dumps({
+                                "message": f"Error in batch {batch_number + 1}: {str(e)}",
+                                "status": "error"
+                            })
+                        }
+
+                # Final status
+                yield {
+                    "event": "complete",
+                    "data": json.dumps({
+                        "message": f"Successfully generated {len(all_transactions)} transactions",
+                        "transactions": all_transactions,
+                        "status": "complete"
+                    })
+                }
+
+            except Exception as e:
+                print(f"Generation failed: {str(e)}")
+                yield {
+                    "event": "error",
+                    "data": json.dumps({
+                        "message": f"Transaction generation failed: {str(e)}",
+                        "status": "error"
+                    })
+                }
+
+        return EventSourceResponse(event_generator())
+    
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 if __name__ == "__main__":
