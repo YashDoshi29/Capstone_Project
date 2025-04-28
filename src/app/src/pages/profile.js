@@ -158,9 +158,8 @@ const Profile = () => {
     const formData = new FormData();
     formData.append("file", pdfFile);
 
-    // Adjust this URL to match your actual PDF-upload endpoint
     try {
-      const response = await fetch("http://localhost:5050/upload", {
+      const response = await fetch("http://52.71.240.201:5050/upload", {
         method: "POST",
         body: formData,
       });
@@ -361,7 +360,7 @@ const Profile = () => {
 
     setLoading(true);
     try {
-      const response = await fetch("http://0.0.0.0:8000/generate", {
+      const response = await fetch("http://52.71.240.201:8000/generate", {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -475,7 +474,7 @@ const Profile = () => {
     setError('');
 
     try {
-        const response = await fetch('http://localhost:8000/generate', {
+        const response = await fetch('http://52.71.240.201:8000/generate', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -489,6 +488,7 @@ const Profile = () => {
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
+        let buffer = ''; // Add a buffer to handle incomplete JSON
 
         while (true) {
             const { value, done } = await reader.read();
@@ -499,33 +499,47 @@ const Profile = () => {
             }
 
             const chunk = decoder.decode(value);
-            const lines = chunk.split('\n');
+            buffer += chunk; // Add new chunk to buffer
+            
+            // Split buffer into lines and process each complete line
+            const lines = buffer.split('\n');
+            // Keep the last potentially incomplete line in the buffer
+            buffer = lines.pop() || '';
 
             for (const line of lines) {
                 if (line.trim() && line.startsWith('data:')) {
-                    let rawData = '';
                     try {
-                        rawData = line.slice(5).trim();
+                        const rawData = line.slice(5).trim();
                         if (!rawData) continue;
 
-                        const data = JSON.parse(rawData);
-                        
+                        // Log the raw data for debugging
+                        console.log('Raw SSE data:', rawData);
+
+                        let jsonData;
+                        try {
+                            jsonData = JSON.parse(rawData);
+                        } catch (jsonError) {
+                            console.error('JSON Parse Error:', jsonError);
+                            console.error('Problematic data:', rawData);
+                            continue; // Skip this malformed piece of data
+                        }
+
                         // Update UI states
-                        if (data.message) setGenerationStatus(data.message);
-                        if (data.total) setTotalTransactions(data.total);
-                        if (data.progress !== undefined) setGenerationProgress(data.progress);
-                        if (data.merchants) setCurrentMerchants(data.merchants);
-                        if (data.transactions) {
-                            setGeneratedTransactions(prev => [...prev, ...data.transactions]);
+                        if (jsonData.message) setGenerationStatus(jsonData.message);
+                        if (jsonData.total) setTotalTransactions(jsonData.total);
+                        if (jsonData.progress !== undefined) setGenerationProgress(jsonData.progress);
+                        if (jsonData.merchants) setCurrentMerchants(jsonData.merchants);
+                        if (jsonData.transactions) {
+                            setGeneratedTransactions(prev => [...prev, ...jsonData.transactions]);
                         }
 
                         // Handle completion
-                        if (data.status === 'complete') {
-                            console.log('Generation complete:', data);
+                        if (jsonData.status === 'complete') {
+                            console.log('Generation complete:', jsonData);
                             setGenerationStatus('Generation complete!');
-                            if (data.transactions) {
-                                const mappedTransactions = mapToStandardCategories(data.transactions);
-                                setGeneratedTransactions(data.transactions); // Keep original for the table view
+                            if (jsonData.transactions) {
+                                const mappedTransactions = mapToStandardCategories(jsonData.transactions);
+                                setGeneratedTransactions(jsonData.transactions);
                                 
                                 // Save mapped transactions for dashboard
                                 localStorage.setItem('transactions', JSON.stringify(mappedTransactions));
@@ -543,14 +557,14 @@ const Profile = () => {
                         }
 
                         // Handle errors
-                        if (data.status === 'error') {
-                            throw new Error(data.message || 'Generation failed');
+                        if (jsonData.status === 'error') {
+                            throw new Error(jsonData.message || 'Generation failed');
                         }
                     } catch (e) {
-                        console.error('Error parsing SSE data:', e, 'Raw data:', rawData);
-                        setError(`Error during generation: ${e.message}`);
-                        setIsGenerating(false);
-                        return;
+                        console.error('Error processing SSE data:', e);
+                        console.error('Problematic line:', line);
+                        // Don't throw the error, just log it and continue
+                        continue;
                     }
                 }
             }
@@ -560,7 +574,6 @@ const Profile = () => {
         setError(`Failed to generate transactions: ${error.message}`);
         setIsGenerating(false);
     } finally {
-        // Ensure generation state is properly cleaned up
         if (isGenerating) {
             setIsGenerating(false);
         }
