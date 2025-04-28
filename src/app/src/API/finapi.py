@@ -3292,6 +3292,65 @@ def extract_company_and_ticker(q: str) -> Tuple[str, str]:
             return k, v
     return None, None
 
+def generate_decision(trend, conf, news_sent, fin_ins) -> Dict:
+    if trend == 'up' and news_sent == 'Positive':
+        act, rs = 'Buy', 'Uptrend & positive news'
+    elif trend == 'down' and news_sent == 'Negative':
+        act, rs = 'Sell', 'Downtrend & negative news'
+    else:
+        act, rs = 'Hold', 'Mixed signals'
+    if 'declining' in fin_ins['profitability_trend'] and act == 'Buy':
+        act = 'Hold'
+        rs += ', profits declining'
+    elif 'growing' in fin_ins['revenue_trend'] and act == 'Hold':
+        rs += ', revenue growing'
+    return {'action': act, 'reasoning': f"{rs}. Fundamentals: {fin_ins['summary']}"}
+
+def get_recommendations(amount: float, risk: str) -> Dict:
+    recs = RISK_BASED_RECOMMENDATIONS.get(risk, [])
+    recommendations = []
+    allocation_plan = []
+    total = 0.0
+
+    for r in recs:
+        tkr       = r['ticker']
+        alloc_amt = amount * r['allocation']
+        hist      = yf.Ticker(tkr).history(period='1mo')
+        price     = hist['Close'].iloc[-1]
+        sma10     = hist['Close'].rolling(10).mean().iloc[-1]
+        trend     = 'up' if price > sma10 else 'down'
+        shares    = round(alloc_amt / price, 2) if price else 0
+        pct       = round(r['allocation'] * 100, 1)
+
+        # build recommendation entry
+        recommendations.append({
+            'ticker': tkr,
+            'allocation_pct': pct,
+            'allocation_amt': round(alloc_amt, 2),
+            'price': round(price, 2),
+            'shares': shares,
+            'trend': trend,
+            'reason': r['reason']
+        })
+
+        # build allocation_plan entry
+        allocation_plan.append({
+            'ticker': tkr,
+            'amount': round(alloc_amt, 2),
+            'shares': shares,
+            'percentage': pct
+        })
+
+        total += alloc_amt
+
+    return {
+        'total_amount': amount,
+        'risk_level': risk,
+        'invested': round(total, 2),
+        'cash_left': round(amount - total, 2),
+        'recommendations': recommendations,
+        'allocation_plan': allocation_plan
+    }
 
 def perform_analysis(ticker: str, amount: float) -> Dict:
     try:
