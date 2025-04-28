@@ -66,6 +66,9 @@ const Profile = () => {
   const [generatedTransactions, setGeneratedTransactions] = useState([]);
   const [showTransactionTable, setShowTransactionTable] = useState(false);
   
+  const API_URL = process.env.NODE_ENV === 'production'
+  ? 'https://52.71.240.201/generate'  // Production API endpoint
+  : 'http://localhost:8000/generate';  // Development API endpoint
 
   const handleUpload = async () => {
     if (!file) return setError("Please select a file first.");
@@ -351,7 +354,6 @@ const Profile = () => {
       return;
     }
 
-    // Validate the user form fields
     const { age, gender, householdSize, annualIncome, zipcode } = userData;
     if (!age || !gender || !householdSize || !annualIncome || !zipcode) {
       setError("Please fill in all fields.");
@@ -360,9 +362,13 @@ const Profile = () => {
 
     setLoading(true);
     try {
-      const response = await fetch("https://52.71.240.201/generate", {
+      const response = await fetch(API_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+            'Content-Type': 'application/json',
+            'Origin': window.location.origin
+        },
+        credentials: 'include',
         body: JSON.stringify({
           age: Number(age),
           gender,
@@ -474,11 +480,13 @@ const Profile = () => {
     setError('');
 
     try {
-        const response = await fetch('https://52.71.240.201/generate', {
+        const response = await fetch(API_URL, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
+                'Origin': window.location.origin
             },
+            credentials: 'include',
             body: JSON.stringify(requestData)
         });
 
