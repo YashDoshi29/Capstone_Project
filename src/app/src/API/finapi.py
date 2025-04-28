@@ -2213,404 +2213,404 @@
 #     app.run(host='0.0.0.0', port=5001, debug=True)
 
 
-import os
-import logging
-from flask import Flask, request, jsonify
-from flask_cors import CORS
-import yfinance as yf
-import numpy as np
-from datetime import datetime, timedelta
-import requests
-import re
-from bs4 import BeautifulSoup
-import nltk
-nltk.download('vader_lexicon')
+# import os
+# import logging
+# from flask import Flask, request, jsonify
+# from flask_cors import CORS
+# import yfinance as yf
+# import numpy as np
+# from datetime import datetime, timedelta
+# import requests
+# import re
+# from bs4 import BeautifulSoup
+# import nltk
+# nltk.download('vader_lexicon')
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Correct import for the transformer pipeline
-from transformers import pipeline as _hf_pipeline
-from nltk.sentiment.vader import SentimentIntensityAnalyzer
+# # ─────────────────────────────────────────────────────────────────────────────
+# # Correct import for the transformer pipeline
+# from transformers import pipeline as _hf_pipeline
+# from nltk.sentiment.vader import SentimentIntensityAnalyzer
 
-# ─────────────────────────────────────────────────────────────────────────────
+# # ─────────────────────────────────────────────────────────────────────────────
 
-app = Flask(__name__)
-CORS(app)
+# app = Flask(__name__)
+# CORS(app)
 
-# ---------------------------
-# Configuration & Global Variables
-# ---------------------------
-NEWSAPI_KEY = "4c310cb414224d468ee9087dd9f208d6"  # Replace with your actual NewsAPI key.
+# # ---------------------------
+# # Configuration & Global Variables
+# # ---------------------------
+# NEWSAPI_KEY = ""  # Replace with your actual NewsAPI key.
 
-SUPPORTED_TICKERS = [
-    'AAPL', 'MSFT', 'NVDA', 'AMD', 'JNJ', 'PFE', 'JPM', 'GS',
-    'KO', 'PEP', 'XOM', 'NEE', 'CVX', 'WMT', 'HD', 'GME',
-    'TSLA', 'F', 'COIN', 'MRNA'
-]
+# SUPPORTED_TICKERS = [
+#     'AAPL', 'MSFT', 'NVDA', 'AMD', 'JNJ', 'PFE', 'JPM', 'GS',
+#     'KO', 'PEP', 'XOM', 'NEE', 'CVX', 'WMT', 'HD', 'GME',
+#     'TSLA', 'F', 'COIN', 'MRNA'
+# ]
 
-SECTOR_MAP = {
-    'AAPL': 'tech', 'MSFT': 'tech', 'NVDA': 'tech', 'AMD': 'tech',
-    'JNJ': 'healthcare', 'PFE': 'healthcare', 'JPM': 'financial', 'GS': 'financial',
-    'KO': 'consumer', 'PEP': 'consumer', 'XOM': 'energy', 'NEE': 'utilities',
-    'CVX': 'energy', 'WMT': 'retail', 'HD': 'retail', 'GME': 'retail',
-    'TSLA': 'auto', 'F': 'auto', 'COIN': 'crypto', 'MRNA': 'biotech'
-}
+# SECTOR_MAP = {
+#     'AAPL': 'tech', 'MSFT': 'tech', 'NVDA': 'tech', 'AMD': 'tech',
+#     'JNJ': 'healthcare', 'PFE': 'healthcare', 'JPM': 'financial', 'GS': 'financial',
+#     'KO': 'consumer', 'PEP': 'consumer', 'XOM': 'energy', 'NEE': 'utilities',
+#     'CVX': 'energy', 'WMT': 'retail', 'HD': 'retail', 'GME': 'retail',
+#     'TSLA': 'auto', 'F': 'auto', 'COIN': 'crypto', 'MRNA': 'biotech'
+# }
 
-COMPANY_NAME_TO_TICKER = {
-    'apple': 'AAPL',
-    'microsoft': 'MSFT',
-    'nvda': 'NVDA',
-    'amd': 'AMD',
-    'jnj': 'JNJ',
-    'pfe': 'PFE',
-    'jpm': 'JPM',
-    'gs': 'GS',
-    'ko': 'KO',
-    'pep': 'PEP',
-    'xom': 'XOM',
-    'nee': 'NEE',
-    'cvx': 'CVX',
-    'wmt': 'WMT',
-    'hd': 'HD',
-    'gme': 'GME',
-    'tsla': 'TSLA',
-    'f': 'F',
-    'coin': 'COIN',
-    'mrna': 'MRNA'
-}
+# COMPANY_NAME_TO_TICKER = {
+#     'apple': 'AAPL',
+#     'microsoft': 'MSFT',
+#     'nvda': 'NVDA',
+#     'amd': 'AMD',
+#     'jnj': 'JNJ',
+#     'pfe': 'PFE',
+#     'jpm': 'JPM',
+#     'gs': 'GS',
+#     'ko': 'KO',
+#     'pep': 'PEP',
+#     'xom': 'XOM',
+#     'nee': 'NEE',
+#     'cvx': 'CVX',
+#     'wmt': 'WMT',
+#     'hd': 'HD',
+#     'gme': 'GME',
+#     'tsla': 'TSLA',
+#     'f': 'F',
+#     'coin': 'COIN',
+#     'mrna': 'MRNA'
+# }
 
-RISK_LEVELS = {
-    'low': ['JNJ', 'PFE', 'JPM', 'GS', 'KO', 'PEP', 'XOM', 'CVX', 'WMT', 'NEE'],
-    'medium': ['AAPL', 'MSFT', 'HD', 'F', 'AMD'],
-    'high': ['NVDA', 'TSLA', 'GME', 'COIN', 'MRNA']
-}
+# RISK_LEVELS = {
+#     'low': ['JNJ', 'PFE', 'JPM', 'GS', 'KO', 'PEP', 'XOM', 'CVX', 'WMT', 'NEE'],
+#     'medium': ['AAPL', 'MSFT', 'HD', 'F', 'AMD'],
+#     'high': ['NVDA', 'TSLA', 'GME', 'COIN', 'MRNA']
+# }
 
-user_profile = {
-    'available_amount': 5000.0,
-    'risk_preference': 'medium'
-}
+# user_profile = {
+#     'available_amount': 5000.0,
+#     'risk_preference': 'medium'
+# }
 
-# ---------------------------
-# Sentiment Analysis (FinBERT, RoBERTa, VADER)
-# ---------------------------
-finbert = _hf_pipeline("sentiment-analysis", model="yiyanghkust/finbert-tone")  # Corrected pipeline import
-roberta = _hf_pipeline("sentiment-analysis", model="cardiffnlp/twitter-roberta-base-sentiment")
-vader = SentimentIntensityAnalyzer()
+# # ---------------------------
+# # Sentiment Analysis (FinBERT, RoBERTa, VADER)
+# # ---------------------------
+# finbert = _hf_pipeline("sentiment-analysis", model="yiyanghkust/finbert-tone")  # Corrected pipeline import
+# roberta = _hf_pipeline("sentiment-analysis", model="cardiffnlp/twitter-roberta-base-sentiment")
+# vader = SentimentIntensityAnalyzer()
 
-def analyze_sentiment(text):
-    """Fixed-weight ensemble sentiment analysis using FinBERT, RoBERTa, and VADER."""
+# def analyze_sentiment(text):
+#     """Fixed-weight ensemble sentiment analysis using FinBERT, RoBERTa, and VADER."""
     
-    # Sentiment from FinBERT
-    finbert_result = finbert(text)[0]
-    finbert_label = finbert_result['label']
-    finbert_score = finbert_result['score']
+#     # Sentiment from FinBERT
+#     finbert_result = finbert(text)[0]
+#     finbert_label = finbert_result['label']
+#     finbert_score = finbert_result['score']
     
-    # Sentiment from RoBERTa
-    roberta_result = roberta(text)[0]
-    roberta_label = roberta_result['label']
-    roberta_score = roberta_result['score']
+#     # Sentiment from RoBERTa
+#     roberta_result = roberta(text)[0]
+#     roberta_label = roberta_result['label']
+#     roberta_score = roberta_result['score']
     
-    # Sentiment from VADER
-    vader_score = vader.polarity_scores(text)['compound']
+#     # Sentiment from VADER
+#     vader_score = vader.polarity_scores(text)['compound']
     
-    # Map FinBERT result to score: Positive (1), Neutral (0), Negative (-1)
-    finbert_score = 1 if finbert_label == 'Positive' else -1 if finbert_label == 'Negative' else 0
+#     # Map FinBERT result to score: Positive (1), Neutral (0), Negative (-1)
+#     finbert_score = 1 if finbert_label == 'Positive' else -1 if finbert_label == 'Negative' else 0
     
-    # Map RoBERTa result to score: Positive (1), Neutral (0), Negative (-1)
-    roberta_score = roberta_score if roberta_label == 'POS' else -roberta_score if roberta_label == 'NEG' else 0
+#     # Map RoBERTa result to score: Positive (1), Neutral (0), Negative (-1)
+#     roberta_score = roberta_score if roberta_label == 'POS' else -roberta_score if roberta_label == 'NEG' else 0
     
-    # VADER score is already a numeric value between -1 and 1 (no need for mapping)
-    vader_weighted_score = vader_score  # VADER score can directly be used for weighting
+#     # VADER score is already a numeric value between -1 and 1 (no need for mapping)
+#     vader_weighted_score = vader_score  # VADER score can directly be used for weighting
     
-    # Calculate the weighted score using the defined weights for each model
-    weighted_score = (0.5 * finbert_score) + (0.3 * roberta_score) + (0.2 * vader_weighted_score)
+#     # Calculate the weighted score using the defined weights for each model
+#     weighted_score = (0.5 * finbert_score) + (0.3 * roberta_score) + (0.2 * vader_weighted_score)
     
-    # Final sentiment label based on the weighted score
-    if weighted_score > 0.15:
-        label = 'Positive'
-    elif weighted_score < -0.15:
-        label = 'Negative'
-    else:
-        label = 'Neutral'
+#     # Final sentiment label based on the weighted score
+#     if weighted_score > 0.15:
+#         label = 'Positive'
+#     elif weighted_score < -0.15:
+#         label = 'Negative'
+#     else:
+#         label = 'Neutral'
     
-    # Return final sentiment label and weighted score
-    return label, weighted_score
+#     # Return final sentiment label and weighted score
+#     return label, weighted_score
 
-# ---------------------------
-# Financial Statement Functions
-# ---------------------------
-def get_financial_statements(ticker):
-    """Fetch the financial statements for a given US ticker symbol for the last 3 years."""
-    try:
-        company = yf.Ticker(ticker)
-        balance_sheet = company.balance_sheet
-        income_statement = company.financials
-        cashflow_statement = company.cashflow
+# # ---------------------------
+# # Financial Statement Functions
+# # ---------------------------
+# def get_financial_statements(ticker):
+#     """Fetch the financial statements for a given US ticker symbol for the last 3 years."""
+#     try:
+#         company = yf.Ticker(ticker)
+#         balance_sheet = company.balance_sheet
+#         income_statement = company.financials
+#         cashflow_statement = company.cashflow
         
-        # Extracting data for the last 3 years (if available)
-        net_income = income_statement.loc['Net Income'].iloc[0:3]
-        total_debt = balance_sheet.loc['Total Debt'].iloc[0:3]
-        revenue = income_statement.loc['Total Revenue'].iloc[0:3]
-        operating_cash_flow = cashflow_statement.loc['Operating Cash Flow'].iloc[0:3]
+#         # Extracting data for the last 3 years (if available)
+#         net_income = income_statement.loc['Net Income'].iloc[0:3]
+#         total_debt = balance_sheet.loc['Total Debt'].iloc[0:3]
+#         revenue = income_statement.loc['Total Revenue'].iloc[0:3]
+#         operating_cash_flow = cashflow_statement.loc['Operating Cash Flow'].iloc[0:3]
         
-        financial_summary = {
-            "net_income": net_income.tolist(),
-            "total_debt": total_debt.tolist(),
-            "revenue": revenue.tolist(),
-            "operating_cash_flow": operating_cash_flow.tolist()
-        }
+#         financial_summary = {
+#             "net_income": net_income.tolist(),
+#             "total_debt": total_debt.tolist(),
+#             "revenue": revenue.tolist(),
+#             "operating_cash_flow": operating_cash_flow.tolist()
+#         }
         
-        financial_summary_str = f"Revenue: {revenue}\nNet Income: {net_income}\nDebt: {total_debt}\nOperating Cash Flow: {operating_cash_flow}"
+#         financial_summary_str = f"Revenue: {revenue}\nNet Income: {net_income}\nDebt: {total_debt}\nOperating Cash Flow: {operating_cash_flow}"
         
-        return financial_summary, financial_summary_str
+#         return financial_summary, financial_summary_str
 
-    except Exception as e:
-        logging.error(f"Error fetching financial data for {ticker}: {str(e)}")
-        return {"error": str(e)}, ""
+#     except Exception as e:
+#         logging.error(f"Error fetching financial data for {ticker}: {str(e)}")
+#         return {"error": str(e)}, ""
 
-# ---------------------------
-# Analyze Financial Sentiment and Generate GPT-2 Summary
-# ---------------------------
-def analyze_financial_data(ticker):
-    financial_data, financial_summary_str = get_financial_statements(ticker)
-    sentiment_text = f"Revenue: {financial_data['revenue']}, Debt: {financial_data['total_debt']}, Net Income: {financial_data['net_income']}, Operating Cash Flow: {financial_data['operating_cash_flow']}"
+# # ---------------------------
+# # Analyze Financial Sentiment and Generate GPT-2 Summary
+# # ---------------------------
+# def analyze_financial_data(ticker):
+#     financial_data, financial_summary_str = get_financial_statements(ticker)
+#     sentiment_text = f"Revenue: {financial_data['revenue']}, Debt: {financial_data['total_debt']}, Net Income: {financial_data['net_income']}, Operating Cash Flow: {financial_data['operating_cash_flow']}"
     
-    sentiment, sentiment_score = analyze_sentiment(sentiment_text)
+#     sentiment, sentiment_score = analyze_sentiment(sentiment_text)
     
-    gpt2_prompt = f"Based on the following financial data, {sentiment} sentiment was detected. Provide a summary.\n"
-    gpt2_prompt += f"Revenue: {financial_data['revenue']}\nNet Income: {financial_data['net_income']}\nDebt: {financial_data['total_debt']}\nOperating Cash Flow: {financial_data['operating_cash_flow']}"
+#     gpt2_prompt = f"Based on the following financial data, {sentiment} sentiment was detected. Provide a summary.\n"
+#     gpt2_prompt += f"Revenue: {financial_data['revenue']}\nNet Income: {financial_data['net_income']}\nDebt: {financial_data['total_debt']}\nOperating Cash Flow: {financial_data['operating_cash_flow']}"
     
-    gpt2_result = generate_gpt2(gpt2_prompt)
+#     gpt2_result = generate_gpt2(gpt2_prompt)
     
-    return {
-        "financial_summary": financial_data,
-        "financial_summary_str": financial_summary_str,  # Add the string version for display
-        "sentiment": sentiment,
-        "sentiment_score": sentiment_score,
-        "explanation": gpt2_result
-    }
+#     return {
+#         "financial_summary": financial_data,
+#         "financial_summary_str": financial_summary_str,  # Add the string version for display
+#         "sentiment": sentiment,
+#         "sentiment_score": sentiment_score,
+#         "explanation": gpt2_result
+#     }
 
-def generate_gpt2(prompt):
-    """Simple mockup of GPT-2's response generation."""
-    # GPT-2 would generate a detailed response
-    return f"The sentiment is {prompt} because the company's revenue is increasing, and while their debt is high, their cash flow is strong."
+# def generate_gpt2(prompt):
+#     """Simple mockup of GPT-2's response generation."""
+#     # GPT-2 would generate a detailed response
+#     return f"The sentiment is {prompt} because the company's revenue is increasing, and while their debt is high, their cash flow is strong."
 
-# ---------------------------
-# News Fetching Functions
-# ---------------------------
-def google_query(search_term):
-    if "news" not in search_term.lower():
-        search_term += " stock news"
-    url = f"https://www.google.com/search?q={search_term}&tbm=nws"
-    return re.sub(r"\s", "+", url)
+# # ---------------------------
+# # News Fetching Functions
+# # ---------------------------
+# def google_query(search_term):
+#     if "news" not in search_term.lower():
+#         search_term += " stock news"
+#     url = f"https://www.google.com/search?q={search_term}&tbm=nws"
+#     return re.sub(r"\s", "+", url)
 
-def google_scrape_news(company_name):
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
-                      'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/102.0.0.0 Safari/537.36'
-    }
-    query = company_name + " stock news"
-    search_url = google_query(query)
-    try:
-        response = requests.get(search_url, headers=headers, timeout=10)
-        response.raise_for_status()
-        html = response.text
-    except Exception as e:
-        app.logger.error(f"Error fetching news from Google: {e}")
-        return [], "Recent News:\nNo news available."
+# def google_scrape_news(company_name):
+#     headers = {
+#         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+#                       'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/102.0.0.0 Safari/537.36'
+#     }
+#     query = company_name + " stock news"
+#     search_url = google_query(query)
+#     try:
+#         response = requests.get(search_url, headers=headers, timeout=10)
+#         response.raise_for_status()
+#         html = response.text
+#     except Exception as e:
+#         app.logger.error(f"Error fetching news from Google: {e}")
+#         return [], "Recent News:\nNo news available."
     
-    soup = BeautifulSoup(html, "html.parser")
-    headlines = []
-    for tag in soup.find_all("div", attrs={"class": "BNeawe vvjwJb AP7Wnd"}):
-        headline = tag.get_text().strip()
-        if headline and headline not in headlines:
-            headlines.append(headline)
-    if not headlines:
-        for tag in soup.find_all("div", attrs={"class": "BNeawe s3v9rd AP7Wnd"}):
-            headline = tag.get_text().strip()
-            if headline and headline not in headlines:
-                headlines.append(headline)
-    if not headlines:
-        for tag in soup.find_all("div", class_=lambda c: c and "DY5T1d" in c):
-            headline = tag.get_text().strip()
-            if headline and headline not in headlines:
-                headlines.append(headline)
-    if len(headlines) > 4:
-        headlines = headlines[:4]
-    news_string = "Recent News:\n" + "\n".join(f"{i+1}. {h}" for i, h in enumerate(headlines))
-    return headlines, news_string
+#     soup = BeautifulSoup(html, "html.parser")
+#     headlines = []
+#     for tag in soup.find_all("div", attrs={"class": "BNeawe vvjwJb AP7Wnd"}):
+#         headline = tag.get_text().strip()
+#         if headline and headline not in headlines:
+#             headlines.append(headline)
+#     if not headlines:
+#         for tag in soup.find_all("div", attrs={"class": "BNeawe s3v9rd AP7Wnd"}):
+#             headline = tag.get_text().strip()
+#             if headline and headline not in headlines:
+#                 headlines.append(headline)
+#     if not headlines:
+#         for tag in soup.find_all("div", class_=lambda c: c and "DY5T1d" in c):
+#             headline = tag.get_text().strip()
+#             if headline and headline not in headlines:
+#                 headlines.append(headline)
+#     if len(headlines) > 4:
+#         headlines = headlines[:4]
+#     news_string = "Recent News:\n" + "\n".join(f"{i+1}. {h}" for i, h in enumerate(headlines))
+#     return headlines, news_string
 
-def get_news_from_newsapi(company_name):
-    if not NEWSAPI_KEY:
-        app.logger.error("NEWSAPI_KEY is not provided.")
-        return [], ""
-    url = "https://newsapi.org/v2/everything"
-    params = {
-        "q": company_name + " stock",
-        "sortBy": "publishedAt",
-        "apiKey": NEWSAPI_KEY,
-        "language": "en",
-        "pageSize": 4
-    }
-    try:
-        response = requests.get(url, params=params, timeout=10)
-        response.raise_for_status()
-        data = response.json()
-        headlines = [article["title"] for article in data.get("articles", []) if article.get("title")]
-        if headlines:
-            news_string = "Recent News:\n" + "\n".join(f"{i+1}. {h}" for i, h in enumerate(headlines))
-            return headlines, news_string
-    except Exception as e:
-        app.logger.error(f"NewsAPI error: {e}")
-    return [], ""
+# def get_news_from_newsapi(company_name):
+#     if not NEWSAPI_KEY:
+#         app.logger.error("NEWSAPI_KEY is not provided.")
+#         return [], ""
+#     url = "https://newsapi.org/v2/everything"
+#     params = {
+#         "q": company_name + " stock",
+#         "sortBy": "publishedAt",
+#         "apiKey": NEWSAPI_KEY,
+#         "language": "en",
+#         "pageSize": 4
+#     }
+#     try:
+#         response = requests.get(url, params=params, timeout=10)
+#         response.raise_for_status()
+#         data = response.json()
+#         headlines = [article["title"] for article in data.get("articles", []) if article.get("title")]
+#         if headlines:
+#             news_string = "Recent News:\n" + "\n".join(f"{i+1}. {h}" for i, h in enumerate(headlines))
+#             return headlines, news_string
+#     except Exception as e:
+#         app.logger.error(f"NewsAPI error: {e}")
+#     return [], ""
 
-def get_recent_stock_news(company_name, ticker):
-    stock = yf.Ticker(ticker)
-    try:
-        news_items = stock.news
-    except Exception:
-        news_items = []
-    headlines = []
-    if news_items:
-        for item in news_items:
-            if "title" in item and item["title"]:
-                headlines.append(item["title"])
-    if not headlines:
-        headlines, news_string = get_news_from_newsapi(company_name)
-        if not headlines:
-            headlines, news_string = google_scrape_news(company_name)
-    else:
-        news_string = "Recent News:\n" + "\n".join(f"{i+1}. {h}" for i, h in enumerate(headlines))
-    return headlines, news_string
+# def get_recent_stock_news(company_name, ticker):
+#     stock = yf.Ticker(ticker)
+#     try:
+#         news_items = stock.news
+#     except Exception:
+#         news_items = []
+#     headlines = []
+#     if news_items:
+#         for item in news_items:
+#             if "title" in item and item["title"]:
+#                 headlines.append(item["title"])
+#     if not headlines:
+#         headlines, news_string = get_news_from_newsapi(company_name)
+#         if not headlines:
+#             headlines, news_string = google_scrape_news(company_name)
+#     else:
+#         news_string = "Recent News:\n" + "\n".join(f"{i+1}. {h}" for i, h in enumerate(headlines))
+#     return headlines, news_string
 
-# ---------------------------
-# Define extract_company_and_ticker Function
-# ---------------------------
-def extract_company_and_ticker(query):
-    q_stripped = query.strip()
-    q_upper = q_stripped.upper()
-    if q_upper in SUPPORTED_TICKERS:
-        return q_upper, q_upper
-    query_lower = q_stripped.lower()
-    for company, ticker in COMPANY_NAME_TO_TICKER.items():
-        if company in query_lower:
-            return company.capitalize(), ticker
-    return None, None
+# # ---------------------------
+# # Define extract_company_and_ticker Function
+# # ---------------------------
+# def extract_company_and_ticker(query):
+#     q_stripped = query.strip()
+#     q_upper = q_stripped.upper()
+#     if q_upper in SUPPORTED_TICKERS:
+#         return q_upper, q_upper
+#     query_lower = q_stripped.lower()
+#     for company, ticker in COMPANY_NAME_TO_TICKER.items():
+#         if company in query_lower:
+#             return company.capitalize(), ticker
+#     return None, None
 
-# ---------------------------
-# API Endpoints (Preserved News Section)
-# ---------------------------
-@app.route('/api/stocks', methods=['GET'])
-def get_supported_stocks():
-    return jsonify({
-        'tickers': SUPPORTED_TICKERS,
-        'risk_levels': list(RISK_LEVELS.keys()),
-        'sectors': list(set(SECTOR_MAP.values()))
-    })
+# # ---------------------------
+# # API Endpoints (Preserved News Section)
+# # ---------------------------
+# @app.route('/api/stocks', methods=['GET'])
+# def get_supported_stocks():
+#     return jsonify({
+#         'tickers': SUPPORTED_TICKERS,
+#         'risk_levels': list(RISK_LEVELS.keys()),
+#         'sectors': list(set(SECTOR_MAP.values()))
+#     })
 
-@app.route('/api/analyze', methods=['GET'])
-def analyze_stock():
-    ticker = request.args.get('ticker', '').upper()
-    if not ticker:
-        full_query = request.args.get('query', '')
-        _, extracted_ticker = extract_company_and_ticker(full_query)
-        if extracted_ticker:
-            ticker = extracted_ticker.upper()
-        else:
-            return jsonify({'error': 'Invalid query; missing ticker'}), 400
+# @app.route('/api/analyze', methods=['GET'])
+# def analyze_stock():
+#     ticker = request.args.get('ticker', '').upper()
+#     if not ticker:
+#         full_query = request.args.get('query', '')
+#         _, extracted_ticker = extract_company_and_ticker(full_query)
+#         if extracted_ticker:
+#             ticker = extracted_ticker.upper()
+#         else:
+#             return jsonify({'error': 'Invalid query; missing ticker'}), 400
 
-    if ticker not in SUPPORTED_TICKERS:
-        return jsonify({'error': f'Invalid ticker "{ticker}".'}), 400
+#     if ticker not in SUPPORTED_TICKERS:
+#         return jsonify({'error': f'Invalid ticker "{ticker}".'}), 400
 
-    amount = float(request.args.get('amount', user_profile['available_amount']))
+#     amount = float(request.args.get('amount', user_profile['available_amount']))
     
-    try:
-        stock = yf.Ticker(ticker)
-        hist  = stock.history(period="1mo")
-        info  = stock.info
+#     try:
+#         stock = yf.Ticker(ticker)
+#         hist  = stock.history(period="1mo")
+#         info  = stock.info
 
-        current_price   = hist['Close'].iloc[-1]
-        open_price      = hist['Open'].iloc[-1]
-        high_price      = hist['High'].iloc[-1]
-        low_price       = hist['Low'].iloc[-1]
-        previous_close  = hist['Close'].iloc[-2] if len(hist)>1 else current_price
-        volume          = hist['Volume'].iloc[-1]
+#         current_price   = hist['Close'].iloc[-1]
+#         open_price      = hist['Open'].iloc[-1]
+#         high_price      = hist['High'].iloc[-1]
+#         low_price       = hist['Low'].iloc[-1]
+#         previous_close  = hist['Close'].iloc[-2] if len(hist)>1 else current_price
+#         volume          = hist['Volume'].iloc[-1]
 
-        sma_10          = hist['Close'].rolling(10).mean().iloc[-1]
-        trend           = "up" if current_price > sma_10 else "down"
-        price_change    = (current_price - previous_close) / previous_close
-        volatility      = (high_price - low_price) / open_price
+#         sma_10          = hist['Close'].rolling(10).mean().iloc[-1]
+#         trend           = "up" if current_price > sma_10 else "down"
+#         price_change    = (current_price - previous_close) / previous_close
+#         volatility      = (high_price - low_price) / open_price
 
-        confidence = 0.5
-        if trend == "up":
-            confidence += 0.2
-        confidence += min(0.2, max(-0.2, price_change*10))
-        confidence -= min(0.1, volatility*0.5)
-        confidence = min(0.95, max(0.05, confidence))
+#         confidence = 0.5
+#         if trend == "up":
+#             confidence += 0.2
+#         confidence += min(0.2, max(-0.2, price_change*10))
+#         confidence -= min(0.1, volatility*0.5)
+#         confidence = min(0.95, max(0.05, confidence))
 
-        shares_possible = int(amount / current_price) if amount > 0 else 0
+#         shares_possible = int(amount / current_price) if amount > 0 else 0
 
-        company_name, _ = extract_company_and_ticker(ticker)
-        news_list, news_string = get_recent_stock_news(company_name or ticker, ticker)
+#         company_name, _ = extract_company_and_ticker(ticker)
+#         news_list, news_string = get_recent_stock_news(company_name or ticker, ticker)
 
-        # original FinBERT-only sentiments
-        sentiments = analyze_sentiment(news_string)
-        overall_sentiment = sentiments[0]  # Sentiment from analyze_sentiment
+#         # original FinBERT-only sentiments
+#         sentiments = analyze_sentiment(news_string)
+#         overall_sentiment = sentiments[0]  # Sentiment from analyze_sentiment
 
-        # ─────────────── New: ensemble sentiment scores ───────────────
-        detailed_sentiments = []
-        for hl in news_list:
-            label, score = analyze_sentiment(hl)
-            detailed_sentiments.append({
-                'headline': hl,
-                'label': label,
-                'score': round(score, 2)
-            })
-        # ────────────────────────────────────────────────────────────────
+#         # ─────────────── New: ensemble sentiment scores ───────────────
+#         detailed_sentiments = []
+#         for hl in news_list:
+#             label, score = analyze_sentiment(hl)
+#             detailed_sentiments.append({
+#                 'headline': hl,
+#                 'label': label,
+#                 'score': round(score, 2)
+#             })
+#         # ────────────────────────────────────────────────────────────────
 
-        # Fetch financial statement sentiment
-        financial_sentiment_data = analyze_financial_data(ticker)
-        financial_sentiment = financial_sentiment_data['sentiment']
-        financial_statements_content = financial_sentiment_data['financial_summary_str']  # Get the string version
+#         # Fetch financial statement sentiment
+#         financial_sentiment_data = analyze_financial_data(ticker)
+#         financial_sentiment = financial_sentiment_data['sentiment']
+#         financial_statements_content = financial_sentiment_data['financial_summary_str']  # Get the string version
 
-        # Rule-based decision
-        if trend == "up" and overall_sentiment == "Positive":
-            decision = "Buy"
-        elif trend == "down" and overall_sentiment == "Negative":
-            decision = "Sell"
-        else:
-            decision = "Hold"
+#         # Rule-based decision
+#         if trend == "up" and overall_sentiment == "Positive":
+#             decision = "Buy"
+#         elif trend == "down" and overall_sentiment == "Negative":
+#             decision = "Sell"
+#         else:
+#             decision = "Hold"
 
-        analysis = (
-            f"Based on technical analysis, {ticker} is trading at ${current_price:.2f} ..."
-        )
+#         analysis = (
+#             f"Based on technical analysis, {ticker} is trading at ${current_price:.2f} ..."
+#         )
 
-        response = {
-            'ticker': ticker,
-            'current_price': round(current_price, 2),
-            'open_price': round(open_price, 2),
-            'high_price': round(high_price, 2),
-            'low_price': round(low_price, 2),
-            'previous_close': round(previous_close, 2),
-            'volume': int(volume),
-            'sma_10': round(sma_10, 2),
-            'pe_ratio': info.get('trailingPE'),
-            'dividend_yield': info.get('dividendYield', 0),
-            'price_change_pct': round(price_change * 100, 2),
-            'volatility_pct': round(volatility * 100, 2),
-            'trend': trend,
-            'technical_confidence': round(confidence, 2),
-            'shares_possible': shares_possible,
-            'news': news_string,
-            'overall_news_sentiment': overall_sentiment,
-            'detailed_sentiments': detailed_sentiments,
-            'financial_statements_sentiment': financial_sentiment,
-            'financial_statements_content': financial_statements_content,  # Displaying content here
-            'analysis': analysis
-        }
-        return jsonify(response)
+#         response = {
+#             'ticker': ticker,
+#             'current_price': round(current_price, 2),
+#             'open_price': round(open_price, 2),
+#             'high_price': round(high_price, 2),
+#             'low_price': round(low_price, 2),
+#             'previous_close': round(previous_close, 2),
+#             'volume': int(volume),
+#             'sma_10': round(sma_10, 2),
+#             'pe_ratio': info.get('trailingPE'),
+#             'dividend_yield': info.get('dividendYield', 0),
+#             'price_change_pct': round(price_change * 100, 2),
+#             'volatility_pct': round(volatility * 100, 2),
+#             'trend': trend,
+#             'technical_confidence': round(confidence, 2),
+#             'shares_possible': shares_possible,
+#             'news': news_string,
+#             'overall_news_sentiment': overall_sentiment,
+#             'detailed_sentiments': detailed_sentiments,
+#             'financial_statements_sentiment': financial_sentiment,
+#             'financial_statements_content': financial_statements_content,  # Displaying content here
+#             'analysis': analysis
+#         }
+#         return jsonify(response)
 
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+#     except Exception as e:
+#         return jsonify({'error': str(e)}), 500
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5001, debug=True)
+# if __name__ == '__main__':
+#     app.run(host='0.0.0.0', port=5001, debug=True)
