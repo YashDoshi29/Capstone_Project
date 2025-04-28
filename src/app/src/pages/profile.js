@@ -360,7 +360,7 @@ const Profile = () => {
 
     setLoading(true);
     try {
-      const response = await fetch("http://52.71.240.201/generate", {
+      const response = await fetch("https://52.71.240.201/generate", {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -474,7 +474,7 @@ const Profile = () => {
     setError('');
 
     try {
-        const response = await fetch('http://52.71.240.201/generate', {
+        const response = await fetch('https://52.71.240.201/generate', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
