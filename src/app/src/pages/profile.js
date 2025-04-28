@@ -66,9 +66,7 @@ const Profile = () => {
   const [generatedTransactions, setGeneratedTransactions] = useState([]);
   const [showTransactionTable, setShowTransactionTable] = useState(false);
   
-  const API_URL = process.env.NODE_ENV === 'production'
-  ? 'https://52.71.240.201/generate'  // Production API endpoint
-  : 'http://localhost:8000/generate';  // Development API endpoint
+  const API_URL = "https://52.71.240.201/generate";  // Use HTTPS
 
   const handleUpload = async () => {
     if (!file) return setError("Please select a file first.");
@@ -480,14 +478,21 @@ const Profile = () => {
     setError('');
 
     try {
-        const response = await fetch(API_URL, {
-            method: 'POST',
+        // Convert request data to query parameters
+        const queryParams = new URLSearchParams({
+            age: requestData.age,
+            gender: requestData.gender,
+            household_size: requestData.household_size,
+            income: requestData.income,
+            zipcode: requestData.zipcode
+        }).toString();
+
+        const response = await fetch(`${API_URL}?${queryParams}`, {
+            method: 'GET',  // Changed to GET
             headers: {
-                'Content-Type': 'application/json',
-                'Origin': window.location.origin
-            },
-            credentials: 'include',
-            body: JSON.stringify(requestData)
+                'Accept': 'text/event-stream',
+                'Origin': 'https://credge.vercel.app'
+            }
         });
 
         if (!response.ok) {
@@ -496,7 +501,7 @@ const Profile = () => {
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
-        let buffer = ''; // Add a buffer to handle incomplete JSON
+        let buffer = '';
 
         while (true) {
             const { value, done } = await reader.read();
@@ -507,11 +512,9 @@ const Profile = () => {
             }
 
             const chunk = decoder.decode(value);
-            buffer += chunk; // Add new chunk to buffer
+            buffer += chunk;
             
-            // Split buffer into lines and process each complete line
             const lines = buffer.split('\n');
-            // Keep the last potentially incomplete line in the buffer
             buffer = lines.pop() || '';
 
             for (const line of lines) {
@@ -520,17 +523,7 @@ const Profile = () => {
                         const rawData = line.slice(5).trim();
                         if (!rawData) continue;
 
-                        // Log the raw data for debugging
-                        console.log('Raw SSE data:', rawData);
-
-                        let jsonData;
-                        try {
-                            jsonData = JSON.parse(rawData);
-                        } catch (jsonError) {
-                            console.error('JSON Parse Error:', jsonError);
-                            console.error('Problematic data:', rawData);
-                            continue; // Skip this malformed piece of data
-                        }
+                        const jsonData = JSON.parse(rawData);
 
                         // Update UI states
                         if (jsonData.message) setGenerationStatus(jsonData.message);
@@ -541,18 +534,13 @@ const Profile = () => {
                             setGeneratedTransactions(prev => [...prev, ...jsonData.transactions]);
                         }
 
-                        // Handle completion
                         if (jsonData.status === 'complete') {
-                            console.log('Generation complete:', jsonData);
                             setGenerationStatus('Generation complete!');
                             if (jsonData.transactions) {
                                 const mappedTransactions = mapToStandardCategories(jsonData.transactions);
                                 setGeneratedTransactions(jsonData.transactions);
-                                
-                                // Save mapped transactions for dashboard
                                 localStorage.setItem('transactions', JSON.stringify(mappedTransactions));
                                 
-                                // Calculate and save category totals
                                 const categoryTotals = mappedTransactions.reduce((acc, transaction) => {
                                     acc[transaction.Category] = (acc[transaction.Category] || 0) + transaction.Amount;
                                     return acc;
@@ -563,15 +551,8 @@ const Profile = () => {
                             setShowTransactionTable(true);
                             return;
                         }
-
-                        // Handle errors
-                        if (jsonData.status === 'error') {
-                            throw new Error(jsonData.message || 'Generation failed');
-                        }
                     } catch (e) {
                         console.error('Error processing SSE data:', e);
-                        console.error('Problematic line:', line);
-                        // Don't throw the error, just log it and continue
                         continue;
                     }
                 }
@@ -580,11 +561,8 @@ const Profile = () => {
     } catch (error) {
         console.error('Generation failed:', error);
         setError(`Failed to generate transactions: ${error.message}`);
-        setIsGenerating(false);
     } finally {
-        if (isGenerating) {
-            setIsGenerating(false);
-        }
+        setIsGenerating(false);
     }
   };
 
